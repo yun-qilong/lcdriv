@@ -1,0 +1,53 @@
+name: CI
+
+"on":
+  push:
+    branches: [main, master]
+
+jobs:
+  post-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Issue Check
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/check-issue-ref.sh HEAD
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 clang-format-15 clang-tidy-14
+
+      - name: Build
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DLCDRIV_BUILD_TESTS=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          cmake --build build --target lcdriv lcdriv_ut -j $(nproc)
+
+      - name: Test
+        working-directory: build
+        run: ctest --output-on-failure -L lcdriv
+
+      - name: Format
+        run: |
+          FILES=$(find src tests -name "*.cpp" -o -name "*.hpp" | grep -v "/build/" | sort)
+          FAIL=0
+          for f in $FILES; do
+            [ -f "$f" ] || continue
+            if ! clang-format-15 --dry-run --Werror "$f" 2>/dev/null; then
+              echo "==== FORMAT ISSUES: $f ===="
+              diff -u "$f" <(clang-format-15 "$f") 2>/dev/null || true
+              FAIL=1
+            fi
+          done
+          if [ "$FAIL" != "0" ]; then echo "Format check FAILED"; exit 1; fi
+          echo "Format check passed"
+
+      - name: Tidy
+        env:
+          CLANG_TIDY_BIN: clang-tidy-14
+        run: python3 scripts/run_tidy.py

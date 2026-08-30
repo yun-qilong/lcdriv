@@ -1,0 +1,41 @@
+# Build
+build/
+cmake-build-*/
+*.o
+*.obj
+*.exe
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Language server
+.cache/
+
+# GitHub (only track workflows and issue templates)
+.github/*
+!.github/workflows/
+!.github/ISSUE_TEMPLATE/
+
+# Python
+__pycache__/
+*.pyc
+
+# 个人开发工具
+scripts/dev/
+
+# 日志
+logs/
+
+# 本地笔记（不入库）
+notes/
+
+# 自动生成的文件（由脚本生成，不入库）
+src/generated/
