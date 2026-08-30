@@ -131,26 +131,41 @@ main() {
   popd > /dev/null
   local SRC_DIR="${BUILD_DIR}/src"
 
+  # 源码落地前守卫：无 CMakeLists.txt 时跳过 build/unit-tests/clang-tidy（CMake 落地后自动恢复）
+  local HAS_CMAKE=1
+  if [[ ! -f "${SRC_DIR}/CMakeLists.txt" ]]; then
+    echo ">>> SKIP: 无 CMakeLists.txt（源码未落地），跳过 build/unit-tests/clang-tidy"
+    HAS_CMAKE=0
+  fi
+
   # 初始化 JSON 结果
   echo '[' > "${RESULT_FILE}.tmp"
 
   # ---- 1. 编译 -------------------------------------------------------
   echo ""
   echo ">>> 编译"
-  run_check "build" "build" bash -c "
-    cmake -B '${BUILD_DIR}/build' '${SRC_DIR}' \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DLCDRIV_BUILD_TESTS=ON \
-      -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-      && cmake --build '${BUILD_DIR}/build' --target lcdriv lcdriv_ut -j \$(nproc)
-  "
+  if [[ ${HAS_CMAKE} -eq 0 ]]; then
+    run_check "build" "build" bash -c "echo 'SKIP: no CMakeLists.txt'; exit 0"
+  else
+    run_check "build" "build" bash -c "
+      cmake -B '${BUILD_DIR}/build' '${SRC_DIR}' \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DLCDRIV_BUILD_TESTS=ON \
+        -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+        && cmake --build '${BUILD_DIR}/build' --target lcdriv lcdriv_ut -j \$(nproc)
+    "
+  fi
 
   # ---- 2. 单元测试 ---------------------------------------------------
   echo ""
   echo ">>> 单元测试"
-  run_check "unit-tests" "test" bash -c "
-    cd '${BUILD_DIR}/build' && ctest --output-on-failure -L lcdriv
-  "
+  if [[ ${HAS_CMAKE} -eq 0 ]]; then
+    run_check "unit-tests" "test" bash -c "echo 'SKIP: no CMakeLists.txt'; exit 0"
+  else
+    run_check "unit-tests" "test" bash -c "
+      cd '${BUILD_DIR}/build' && ctest --output-on-failure -L lcdriv
+    "
+  fi
 
   # ---- 3. clang-format 检查 (仅变更文件) ----------------------------
   echo ""
@@ -178,7 +193,9 @@ main() {
   echo "HeaderFilterRegex:"
   grep HeaderFilterRegex "${SRC_DIR}/.clang-tidy" || echo "NOT FOUND"
   echo "==================="
-  if [[ -z "${CHANGED_FILES}" ]]; then
+  if [[ ${HAS_CMAKE} -eq 0 ]]; then
+    run_check "clang-tidy" "static-analysis" bash -c "echo 'SKIP: no CMakeLists.txt'; exit 0"
+  elif [[ -z "${CHANGED_FILES}" ]]; then
     run_check "clang-tidy" "static-analysis" bash -c "echo 'no changed C++ files'; exit 0"
   else
     run_check "clang-tidy" "static-analysis" bash -c "

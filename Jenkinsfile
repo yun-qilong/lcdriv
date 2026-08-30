@@ -31,11 +31,18 @@ pipeline {
     stage('Build') {
       steps {
         dir('src') {
-          sh 'cmake -B build -DCMAKE_BUILD_TYPE=Release -DLCDRIV_BUILD_TESTS=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && cmake --build build --target lcdriv lcdriv_ut -j $(nproc)'
+          sh '''
+          if [ ! -f CMakeLists.txt ]; then
+            echo "SKIP: 尚无 CMakeLists.txt（源码未落地），跳过 Build"
+            exit 0
+          fi
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DLCDRIV_BUILD_TESTS=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && cmake --build build --target lcdriv lcdriv_ut -j $(nproc)
+          '''
         }
       }
     }
     stage('Test') {
+      when { expression { fileExists('src/CMakeLists.txt') } }
       steps {
         dir('src/build') { sh 'ctest --output-on-failure -L lcdriv' }
       }
@@ -61,7 +68,7 @@ echo "Format check passed"'''
       }
     }
     stage('Tidy') {
-      when { expression { params.CI_MODE == 'full' } }
+      when { expression { params.CI_MODE == 'full' && fileExists('src/CMakeLists.txt') } }
       steps {
         dir('src') {
           sh '''echo "=== clang-tidy diagnostics ==="

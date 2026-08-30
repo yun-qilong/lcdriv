@@ -25,10 +25,16 @@ jobs:
 
       - name: Build
         run: |
+          # 源码落地前（无 CMakeLists.txt）跳过构建；CMake 落地后自动恢复
+          if [ ! -f CMakeLists.txt ]; then
+            echo "SKIP: 尚无 CMakeLists.txt（源码未落地），跳过 Build"
+            exit 0
+          fi
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DLCDRIV_BUILD_TESTS=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
           cmake --build build --target lcdriv lcdriv_ut -j $(nproc)
 
       - name: Test
+        if: hashFiles('CMakeLists.txt') != ''
         working-directory: build
         run: ctest --output-on-failure -L lcdriv
 
@@ -48,6 +54,7 @@ jobs:
           echo "Format check passed"
 
       - name: Tidy
+        if: hashFiles('CMakeLists.txt') != ''
         env:
           CLANG_TIDY_BIN: clang-tidy-14
         run: python3 scripts/run_tidy.py
