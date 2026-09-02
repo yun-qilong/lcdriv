@@ -36,7 +36,7 @@ pipeline {
             echo "SKIP: 尚无 CMakeLists.txt（源码未落地），跳过 Build"
             exit 0
           fi
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -DLCDRIV_BUILD_TESTS=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && cmake --build build --target lcdriv lcdriv_ut -j $(nproc)
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DLCDRIV_BUILD_TESTS=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && cmake --build build --target lcdriv_ut -j $(nproc)
           '''
         }
       }

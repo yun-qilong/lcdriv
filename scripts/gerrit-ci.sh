@@ -152,7 +152,7 @@ main() {
         -DCMAKE_BUILD_TYPE=Release \
         -DLCDRIV_BUILD_TESTS=ON \
         -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-        && cmake --build '${BUILD_DIR}/build' --target lcdriv lcdriv_ut -j \$(nproc)
+        && cmake --build '${BUILD_DIR}/build' --target lcdriv_ut -j \$(nproc)
     "
   fi
 
@@ -177,11 +177,13 @@ main() {
       exit 0
     fi
     command -v clang-format >/dev/null 2>&1 || { echo "clang-format not found"; exit 1; }
-    echo "${CHANGED_FILES}" | tr " " "\n" | while read -r f; do
+    rc=0
+    for f in ${CHANGED_FILES}; do
       [[ -f "${f}" ]] || continue
       echo "  checking: ${f}"
-      clang-format --dry-run --Werror "${f}" || true
+      clang-format --dry-run --Werror "${f}" || rc=1
     done
+    exit ${rc}
   '
 
   # ---- 4. clang-tidy -------------------------------------------------
@@ -193,18 +195,20 @@ main() {
   echo "HeaderFilterRegex:"
   grep HeaderFilterRegex "${SRC_DIR}/.clang-tidy" || echo "NOT FOUND"
   echo "==================="
+  # tidy gate：库头不自包含（include 顺序契约），须经 TU 分析；固定用
+  # tests/TestCompileTime.cpp（先 include hal_stub 再 include 伞头）作探针，
+  # HeaderFilterRegex 只暴露 include/ 库代码诊断（tests/support 因 HAL 同名类型豁免）。
+  TIDY_PROBE="tests/TestCompileTime.cpp"
   if [[ ${HAS_CMAKE} -eq 0 ]]; then
     run_check "clang-tidy" "static-analysis" bash -c "echo 'SKIP: no CMakeLists.txt'; exit 0"
-  elif [[ -z "${CHANGED_FILES}" ]]; then
-    run_check "clang-tidy" "static-analysis" bash -c "echo 'no changed C++ files'; exit 0"
   else
     run_check "clang-tidy" "static-analysis" bash -c "
       cd '${SRC_DIR}'
-      echo '${CHANGED_FILES}' | tr ' ' '\n' | while read -r f; do
-        [[ -f \"\${f}\" ]] || continue
-        clang-tidy-14 --config-file='${SRC_DIR}/.clang-tidy' \
-          -p='${BUILD_DIR}/build' \"\${f}\" 2>&1 || true
-      done
+      log=\$(clang-tidy-14 --config-file='${SRC_DIR}/.clang-tidy' \
+        -p='${BUILD_DIR}/build' -warnings-as-errors='*' '${TIDY_PROBE}' 2>&1)
+      echo \"\${log}\"
+      echo \"\${log}\" | grep -qE 'error:' && exit 1
+      exit 0
     "
   fi
 
