@@ -1,8 +1,11 @@
 HeaderFilterRegex: '.*/include/.*\.hpp$'
 
+# bugprone-dynamic-static-initializers 对类模板中的 C++17 static constexpr 成员误报
+# （隐式 inline、编译期常量、无动态初始化；本库 kBytes / kMadctlDefault 即此类），故禁用。
 Checks: >
   -*,
   bugprone-*,
+  -bugprone-dynamic-static-initializers,
   -bugprone-easily-swappable-parameters,
   -bugprone-narrowing-conversions,
   clang-analyzer-*,

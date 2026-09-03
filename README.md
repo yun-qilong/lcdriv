@@ -19,7 +19,7 @@ doc/                        正式文档（spec）—— 索引见 doc/README.md
 
 ## 当前支持
 
-- SPI + ILI9341（RGB565；方向与逻辑分辨率见 `doc/03` §4）
+- SPI + ILI9341（RGB565；方向与逻辑分辨率见 Controller spec §4（`doc/code/controller/ili9341.md`））
 
 ## 构建与测试
 
@@ -51,7 +51,7 @@ FetchContent_Declare(lcdriv
     GIT_TAG        main # 第一个驱动完成后将会拉取独立分支，到时将tag钉到对应分支
 )
 FetchContent_MakeAvailable(lcdriv)
-# ... target_link_libraries(stm32cubemx lcdriv)
+# ... target_link_libraries(<固件目标> lcdriv)
 # INTERFACE 目标只传播 include 目录与用法要求，不会编译/链接任何 lcdriv 代码
 ```
 
@@ -66,14 +66,14 @@ FetchContent_MakeAvailable(lcdriv)
 
 ## 单元测试
 
-- gtest（FlowHub/raycaster 同款 v1.17.0，FetchContent），用例设计见 `doc/05-ut-design.md`；测试通过 `tests/support/hal_stub`（主机侧 HAL 替身）在**不改动库代码**的前提下编译运行真实库逻辑。
+- gtest v1.17.0（FetchContent），测试框架规范见 `doc/test/architecture.md`（分层 UT + MT；`lcdriv_restricted` 红线编译门禁随 CI 构建）；测试通过 `tests/support/hal_stub`（主机侧 HAL 替身）在**不改动库代码**的前提下编译运行真实库逻辑。
 
 ## 版本与分支策略
 
 - 主分支持续演进；**实现并硬件调试完成后，将当前实现版本单独拉发布分支**（脱离主干，仅 bugfix 演进）。
-- raycaster 等消费方依赖该发布分支：FetchContent `GIT_TAG` 指向发布分支/标签（版本锁定，见上方「集成」）。
-- 协议相关数据（初始化序列、MADCTL 实测值）变更必须同步 doc/03 修订记录与对应 UT 用例。
+- 消费方依赖该发布分支：FetchContent `GIT_TAG` 指向发布分支/标签（版本锁定，见上方「集成」）。
+- 协议相关数据（初始化序列、MADCTL 实测值）变更须硬件重新实测，并同步 Controller spec（`doc/code/controller/ili9341.md`）与对应测试。
 
 ## 设计文档
 
-正式文档（spec）在 `doc/`：`doc/README.md` 索引 → 01 架构 → 02/03/04 算法 spec → 05 UT 设计。实现与维护以 `doc/` 为准；代码中不写注释，需要解释的内容一律见 doc/。
+正式文档（spec）在 `doc/`：`doc/README.md` 索引 → `code/architecture.md`（代码架构）→ `code/{bus,controller,driver}/*.md`（算法 spec）→ `test/architecture.md`（测试框架）→ `test/{bus,controller,driver}/*.md`（case design）。实现与维护以 `doc/` 为准；代码中不写注释，需要解释的内容一律见 doc/。

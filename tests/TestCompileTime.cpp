@@ -28,7 +28,7 @@ static_assert(Controller<ControllerType::ILI9341, 320, 240>::kMadctlDefault == 0
 using PortraitDriver = LcdDriver<BusType::SPI, ControllerType::ILI9341, 240, 320>;
 using LandscapeDriver = LcdDriver<BusType::SPI, ControllerType::ILI9341, 320, 240>;
 
-TEST(CompileTime, DefaultCtor_AndDimensions)
+TEST(TestCompileTime, DefaultCtor_AndDimensions)
 {
     PortraitDriver portrait;
     LandscapeDriver landscape;
@@ -39,7 +39,7 @@ TEST(CompileTime, DefaultCtor_AndDimensions)
     EXPECT_EQ(landscape.height(), 240);
 }
 
-TEST(CompileTime, ConstantsExposed)
+TEST(TestCompileTime, ConstantsExposed)
 {
     EXPECT_EQ(static_cast<int>(PortraitDriver::kBytes), 153600);
     EXPECT_EQ(static_cast<int>(Controller<ControllerType::ILI9341, 240, 320>::kMadctlDefault),

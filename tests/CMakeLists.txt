@@ -15,3 +15,19 @@ function(lcdriv_add_ut TEST_NAME)
 endfunction()
 
 lcdriv_add_ut(TestCompileTime SOURCES TestCompileTime.cpp)
+
+add_executable(lcdriv_restricted RestrictedCompile.cpp)
+target_include_directories(lcdriv_restricted PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${PROJECT_SOURCE_DIR}/include
+)
+target_link_libraries(lcdriv_restricted PRIVATE lcdriv)
+target_compile_options(lcdriv_restricted PRIVATE
+    -fno-exceptions
+    -fno-rtti
+    -fno-threadsafe-statics
+    -Wall
+    -Wextra
+    -Werror
+)
+add_dependencies(lcdriv_ut lcdriv_restricted)

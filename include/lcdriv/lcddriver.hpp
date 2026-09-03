@@ -17,10 +17,16 @@ class LcdDriver
 template <int M, int N>
 class LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N>
 {
+    static_assert(M > 0 && N > 0, "LcdDriver: M and N must be positive");
+
   public:
     static constexpr int kBytes = M * N * 2;
 
     LcdDriver() = default;
+    LcdDriver(const LcdDriver &) = delete;
+    LcdDriver &operator=(const LcdDriver &) = delete;
+    LcdDriver(LcdDriver &&) noexcept = default;
+    LcdDriver &operator=(LcdDriver &&) noexcept = default;
 
     bool init(SPI_HandleTypeDef *spi, GPIO_TypeDef *cs_port, uint16_t cs_pin, GPIO_TypeDef *dc_port,
               uint16_t dc_pin, GPIO_TypeDef *rst_port, uint16_t rst_pin);

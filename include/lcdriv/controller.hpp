@@ -4,15 +4,13 @@
 #include "core.hpp"
 
 template <ControllerType ctrl, int M, int N>
-class Controller
-{
-    static_assert(IsSupported<BusType::SPI, ctrl>::value,
-                  "Controller: unsupported controller type");
-};
+class Controller;
 
 template <int M, int N>
 class Controller<ControllerType::ILI9341, M, N>
 {
+    static_assert(M > 0 && N > 0, "Controller: M and N must be positive");
+
   public:
     static constexpr uint8_t kMadctlDefault = (M > N) ? 0x60 : 0x00;
 

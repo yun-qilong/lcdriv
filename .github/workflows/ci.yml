@@ -40,7 +40,7 @@ jobs:
 
       - name: Format
         run: |
-          FILES=$(find src tests -name "*.cpp" -o -name "*.hpp" | grep -v "/build/" | sort)
+          FILES=$(find include tests -name "*.cpp" -o -name "*.hpp" | grep -v "/build/" | sort)
           FAIL=0
           for f in $FILES; do
             [ -f "$f" ] || continue

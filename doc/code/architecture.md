@@ -1,11 +1,11 @@
-# lcdriv 架构文档
+# lcdriv 代码架构（Architecture）
 
-> 正式架构说明（实现依据）。本文与 doc/ 下各算法文档（02–04）为代码的唯一实现依据：本文给出整体结构与决策，算法文档给出每个 public 函数的可核对数据。
-> 协议级数据（初始化序列、读 ID、SPI 配置）以实测驱动为准：raycaster-demo `stm32/led_blink`（ili9341.c / main.c / .ioc），详见 doc/02 §3、doc/03 §6。
+> 正式架构说明（实现依据）。本文与 code/ 下各层算法 spec（bus/controller/driver）为代码的唯一实现依据：本文给出整体结构与决策，算法文档给出每个 public 函数的可核对数据。
+> 协议级数据（初始化序列、读 ID、SPI 配置）在 STM32 HAL 环境经硬件验证（SPI Mode 0、~12MHz），详见 Bus spec §3、Controller spec §6。
 
 ## 1. 定位与硬约束
 
-**定位**：最小、零依赖、编译期可配置的**裸机 LCD 驱动库**。从 raycaster-demo 的驱动部分独立而来，现阶段目标是实现 raycaster-demo 所需驱动，同时预留通用化扩展点（加屏 / 加总线 / 换分辨率）。
+**定位**：最小、零依赖、编译期可配置的**裸机 LCD 驱动库**（独立、通用）。只做单帧传输，不带字体与 GFX；预留扩展点（加屏 / 加总线 / 换分辨率）。
 
 - 只做核心驱动：`init` / `pushFrame` / `fillScreen` / `readID` / `setOrientation`；不带字体、不带 GFX、不带绘图引擎。
 - 核心思想：**驱动 = 传输（怎么把字节搬过去）× 控制器（该发什么、按什么顺序）**，二者正交，用模板在编译期确定。
@@ -17,7 +17,7 @@
 | 无堆 | 不 new/malloc、无 STL 动态容器；帧缓冲由上层预分配 |
 | 无异常 / 无 RTTI / 无虚表 | `-fno-exceptions -fno-rtti`；"多态" = 模板特化 + duck-typing |
 | 编译期确定 | Bus、Controller、分辨率、像素格式均在编译期固定，零运行时开销 |
-| header-only | 模板库：伞头 `include/lcdriv.hpp`（内部按层拆分 `include/lcdriv/{core,bus,controller,lcddriver}.hpp`，声明与实现同文件——模板实现必须在头内）；C 包装后续单独 .cpp。**无任何库产物、无静态/动态链接要求**：模板在使用方 TU 编译期实例化（多 TU 重复实例化由编译器合并）；仅调用 HAL 普通函数，其由 CubeMX 工程静态编入固件 |
+| header-only | 模板库：伞头 `include/lcdriv.hpp`（内部按层拆分 `include/lcdriv/{core,bus,controller,lcddriver}.hpp`，声明与实现同文件——模板实现必须在头内）；C 包装后续单独 .cpp。**无任何库产物、无静态/动态链接要求**：模板在使用方 TU 编译期实例化（多 TU 重复实例化由编译器合并）；仅调用 HAL 普通函数，其由使用方工程（如 STM32Cube 生成工程）静态编入固件 |
 | 碰到一个加一个 | 不追求一开始就万能；每次只引入一个变量 |
 
 ## 2. 三层架构
@@ -46,7 +46,7 @@ LcdDriver<BusType, ControllerType, M, N>         ← 组合根 + CS 事务 + 门
 |---|---|---|
 | `BusType` | 物理总线（SPI / I2C / …） | 离散、封闭 → **偏特化维度** |
 | `ControllerType` | 控制器芯片（ILI9341 / ST7789 / …） | 离散、封闭 → **偏特化维度** |
-| `M, N` | **逻辑分辨率** = 应用帧缓冲的宽/高（如竖屏 240×320、横屏 320×240） | 连续 → **自由模板参数，不特化**；方向（MADCTL）由 M/N 相对面板编译期推导（doc/03 §4.2） |
+| `M, N` | **逻辑分辨率** = 应用帧缓冲的宽/高（如竖屏 240×320、横屏 320×240） | 连续 → **自由模板参数，不特化**；方向（MADCTL）由 M/N 相对面板编译期推导（Controller spec §4.2） |
 
 **策略：分辨率不特化，只偏特化 bus+controller。** 一个 (bus, controller) 偏特化服务该组合的所有分辨率；`M*N*2` 等仍为编译期常量。
 
@@ -73,7 +73,7 @@ class LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N> { /* ... */ };
 
 | 函数 | 语义 | 备注 |
 |---|---|---|
-| `init(...)` | 装配 + 硬件初始化（复位 + 初始化序列）；成功返回 true | 入参 = SPI 句柄 + CS/DC/RST 端口/引脚（doc/04 §2） |
+| `init(...)` | 装配 + 硬件初始化（复位 + 初始化序列）；成功返回 true | 入参 = SPI 句柄 + CS/DC/RST 端口/引脚（Driver spec §2） |
 | `pushFrame(px)` | 推一整帧（M×N×2 字节） | 帧缓冲由上层预分配，驱动不持有 |
 | `fillScreen(color)` | 整屏填充单色 | |
 | `readID()` | 读芯片 ID 验证接线/型号 | 需 MISO 已接 |
@@ -81,7 +81,7 @@ class LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N> { /* ... */ };
 | `width()` / `height()` | 对外宽高 | 编译期常量 |
 
 - **字节序（重点）**：RGB565 像素先高字节后低字节（`0xF800` → `0xF8 0x00`）。帧缓冲用字节数组、高字节在前，直接 DMA 不错序。
-- **生命周期（已定，双范式）**：① 传统 C 式——默认构造（句柄空）+ `bool init(...)`；② 推荐（raycaster-demo 用）——`explicit LcdDriver(...)` **原子构造**（构造 = 装配 + 上电），配合调用方 `std::optional` 原地构造，不存在"构造了但未初始化"的中间态。未完成装配即调用显示接口 = 未定义行为。细节见 doc/04 §3。
+- **生命周期（已定，双范式）**：① 传统 C 式——默认构造（句柄空）+ `bool init(...)`；② 推荐——`explicit LcdDriver(...)` **原子构造**（构造 = 装配 + 上电），配合调用方 `std::optional` 原地构造，不存在"构造了但未初始化"的中间态。未完成装配即调用显示接口 = 未定义行为。细节见 Driver spec §3。
 - **DMA 归属 Bus 层**：`transmitDMA` + busy 标志 + 双缓冲；Controller / Driver 无感（仍是 `send`/`read` 语义）。
 
 ## 5. 支持矩阵与扩展路径
@@ -99,10 +99,10 @@ class LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N> { /* ... */ };
 
 ## 6. 文档导航
 
-- 阅读顺序：`doc/README.md`（索引）→ 本文件 → 自下而上读算法文档：`02-bus-spi` → `03-controller-ili9341` → `04-lcddriver-spi-ili9341` → `05-ut-design`。
-- 算法文档模板与约定见 `doc/README.md`「约定」；新增类特化时在 doc/ 登记。
+- 阅读顺序：`doc/README.md`（索引）→ 本文件 → 自下而上读算法 spec：`code/bus/spi.md` → `code/controller/ili9341.md` → `code/driver/spi-ili9341.md`；写测试前读 `test/architecture.md`。
+- 算法 spec 模板与约定见 `doc/README.md`「约定」；新增类特化时在 code/、test/、tests/ 三处各加一个文件。
 
 ## 7. 阶段路线
 
-1. **阶段一**：SPI + ILI9341，12MHz 阻塞传输，验证「读 ID + 测试图」。
-2. **阶段二**：DMA（帧缓冲放 AXI SRAM、D-Cache 处理、busy 标志、双缓冲）+ 提频（24 → 30 → 40MHz，受杜邦线信号完整性约束）。
+1. SPI + ILI9341 阻塞传输验证「读 ID + 测试图」。
+2. DMA（帧缓冲放 DMA 可达内存、D-Cache 处理、busy 标志、双缓冲）+ 提频（受信号完整性约束）。
