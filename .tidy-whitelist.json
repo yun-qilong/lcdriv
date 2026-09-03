@@ -1,5 +1,24 @@
 {
   "include/lcdriv/bus.hpp": {
     "cppcoreguidelines-pro-type-const-cast": 1
+  },
+  "include/lcdriv/controller.hpp": {
+    "cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays": 7,
+    "cppcoreguidelines-pro-bounds-constant-array-index": 1,
+    "cppcoreguidelines-pro-bounds-pointer-arithmetic": 1,
+    "google-explicit-constructor": 1,
+    "modernize-use-auto": 2,
+    "readability-identifier-naming": 19
+  },
+  "include/lcdriv/core.hpp": {
+    "readability-identifier-naming": 2
+  },
+  "include/lcdriv/lcdDriver.hpp": {
+    "readability-identifier-naming": 5
+  },
+  "include/lcdriv/panelMgr.hpp": {
+    "cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays": 4,
+    "cppcoreguidelines-pro-bounds-constant-array-index": 6,
+    "cppcoreguidelines-pro-type-member-init": 1
   }
 }

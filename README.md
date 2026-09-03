@@ -12,7 +12,7 @@
 
 ```
 include/lcdriv.hpp          伞头（消费方 include 入口）
-include/lcdriv/*.hpp        按层拆分：core / bus / controller / lcddriver
+include/lcdriv/*.hpp        按层拆分：core / bus / controller / lcdDriver / panelMgr（文件名为小驼峰，类名为大驼峰）
 tests/                      gtest 单元测试（hal_stub 为主机侧 HAL 替身）
 doc/                        正式文档（spec）—— 索引见 doc/README.md
 ```

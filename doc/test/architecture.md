@@ -1,6 +1,6 @@
 # lcdriv UT 测试框架（Spec）
 
-> **状态：框架定稿。** 本文是测试**框架**规范——分层原则、mock 边界、目录/命名/CMake/红线门禁。**不含用例设计**：各 suite 的用例在实现步逐批设计并经 review 后补充。风格约定：gtest（FetchContent v1.17.0）+ `lcdriv_add_ut` 辅助 + `gtest_discover_tests`。
+> 本文是测试**框架**规范——分层原则、mock 边界、目录/命名/CMake/红线门禁；**不含用例设计**：各 suite 的用例在实现步逐批设计并经 review 后补充（suite 代码落地情况见 §6 清册）。风格约定：gtest（FetchContent v1.17.0）+ `lcdriv_add_ut` 辅助 + `gtest_discover_tests`。
 
 ## 1. 分层原则（框架级）
 
@@ -8,13 +8,14 @@
 
 | 测试场 | 被测对象 | 互动处用什么 | 覆盖范围 |
 |---|---|---|---|
-| **Bus UT** | `Bus<BusType::SPI>` | hal_stub（HAL 替身） | send/read 行为与边界 |
-| **Controller UT** | `Controller<ControllerType::ILI9341, M, N>` | **MockBus** + hal_stub（GPIO/Delay） | 协议方法行为与边界（不含上电序列） |
-| **MT** | `LcdDriver<SPI, ILI9341, M, N>`（真实三层） | 无（全部真实；HAL 仍为 hal_stub） | Driver 场（生命周期/CS/门面）+ 上电序列 + 端到端协议真值 |
+| **Bus UT** | `Bus<BusType::SPI, P, dma>` | hal_stub（HAL 替身）+ 假 PanelMgr | send/read/sendBulk 行为与边界（含 sendBulk 分块与完成收尾；dma=true 链式/收尾仅末段） |
+| **Controller UT** | `Controller<ControllerType::ILI9341, M, N>` | **MockBus** + hal_stub（GPIO/Delay） | 协议方法行为与边界（不含初始化命令表） |
+| **PanelMgr UT** | `PanelMgr` | hal_stub（GPIO/Delay） | select 互斥/deselect/reset 脉冲与边界 |
+| **MT** | `LcdDriver<SPI, ILI9341, M, N, P>`（真实三层） | 无（全部真实；HAL 仍为 hal_stub） | Driver 场（生命周期/CS/门面）+ 上电序列 + 端到端协议真值 |
 
 **规则**：
 - **Driver 不做独立 UT**：组合根无自有逻辑可隔离（装配接线/CS 事务/门面转发），效果全部在 hal_stub transcript 上可观测，MT 用真实三层覆盖。若将来 Driver 长出真逻辑（DMA 编排、双缓冲、错误路径），再补独立 UT。
-- **bringUp（上电序列）不归任何层 UT**：Controller 私有、装配期由 Driver 调用（Controller spec §5），无公开触发路径——序列断言全部归 MT。
+- **上电序列拆两块**：硬件复位脉冲 = `PanelMgr::reset`（公开、可单测，见 PanelMgr UT）；初始化命令表 = Controller 装配期私有序列（归 MT 断言，无公开触发路径）。
 - **库头不自包含（include 顺序契约）**：凡分析库头（clang-tidy/编译）必须经"先 HAL 替身、后库"的 TU。
 
 ## 2. mock 语义
@@ -22,26 +23,28 @@
 | mock | 位置 | 提供 |
 |---|---|---|
 | `hal_stub` | `support/hal_stub.{hpp,cpp}` | HAL 类型替身 + 4 个 HAL 函数（TX 记录 / read 预置回填 / GPIO 写 / 延时）+ `hal::g_transcript` 观测点 |
-| `MockBus` | `support/mock_bus.hpp`（header-only，规划中） | duck-type 总线：`send` 记录字节流与调用次数、`read` 按预置回填；Controller 的 Bus 参数是 `template<typename B>`，MockBus 零成本替换 |
+| `MockBus` | `support/mockBus.hpp`（header-only） | duck-type 总线：`send`/`sendBulk` 记录字节流与调用次数、`read` 按预置回填；Controller 的 Bus 参数是 `template<typename B>`，MockBus 零成本替换 |
 
-HAL 符号面（stub 需实现的全部）：`HAL_SPI_Transmit / HAL_SPI_Receive / HAL_GPIO_WritePin / HAL_Delay`。
+HAL 符号面（stub 需实现的全部）：`HAL_SPI_Transmit / HAL_SPI_Receive / HAL_GPIO_WritePin / HAL_Delay`；`dma=true` 用例另需 `HAL_SPI_Transmit_DMA / HAL_SPI_RegisterCallback`（hal_stub 补 DMA 启动记录与完成事件触发，供链式/收尾断言）。
 
 ## 3. 目录与命名规范
 
 ```
 tests/
 ├── CMakeLists.txt
-├── TestCompileTime.cpp        # 编译期契约（已落地，见 §6）
-├── RestrictedCompile.cpp      # lcdriv_restricted 红线编译门禁（已落地，见 §5）
+├── TestCompileTime.cpp        # 编译期契约（见 §6）
+├── RestrictedCompile.cpp      # lcdriv_restricted 红线编译门禁（见 §5）
 ├── Bus/                       # Bus 层 UT；新总线 = 加 TestBusXxx.cpp
-│   └── TestBusSPI.cpp         # 规划中（对应 Bus spec）
+│   └── TestBusSPI.cpp         # 对应 Bus spec
 ├── Controller/                # Controller 层 UT；新控制器 = 加 TestControllerXxx.cpp
-│   └── TestControllerILI9341.cpp  # 规划中（对应 Controller spec）
+│   └── TestControllerILI9341.cpp  # 对应 Controller spec
+├── PanelMgr/                  # PanelMgr UT（跨层组件）
+│   └── TestPanelMgr.cpp       # 对应 code/panelMgr.md
 ├── Mt/                        # MT；新 (bus,controller) 搭配 = 加 TestLcdDriver<Bus><Ctrl>.cpp
-│   └── TestLcdDriverSpiIli9341.cpp  # 规划中（对应 Driver spec）
+│   └── TestLcdDriverSpiIli9341.cpp  # 对应 Driver spec
 └── support/
     ├── hal_stub.{hpp,cpp}
-    └── mock_bus.hpp           # 规划中
+    └── mockBus.hpp
 ```
 
 **命名规则**：文件与 gtest suite 名 = `TestXxx`；测试文件与算法文档一一对应——`Bus spec ↔ Bus/TestBusSPI`、`Controller spec ↔ Controller/TestControllerILI9341`、`Driver spec ↔ Mt/TestLcdDriverSpiIli9341`；扩展一个搭配加一个新文件，旧文件不动。用例名 = **英文 camelCase 标识符**（如 `sendZeroLengthNoOp`），直接写进 `TEST_F` 便于检索定位。
@@ -67,9 +70,9 @@ endfunction()
 - 行为类 suite 一律带 `support/hal_stub.cpp`；纯编译期 suite（TestCompileTime）不带。
 - suite 经 `lcdriv_add_ut` 自动挂入聚合目标 `lcdriv_ut`（CI 构建入口）。
 - 测试 target **不加** 红线 flag（gtest 需要异常）；红线合规由 `lcdriv_restricted` 验证。
-- **include 顺序**：测试 TU 先 `support/hal_stub.hpp`（Controller UT 再加 `support/mock_bus.hpp`）后 `lcdriv.hpp`；**两者之间用空行分成两个 include 块**——clang-format 只做块内排序，否则会把 `lcdriv.hpp` 排到 hal_stub 前破坏 include 顺序契约。
+- **include 顺序**：测试 TU 先 `support/hal_stub.hpp`（Controller UT 再加 `support/mockBus.hpp`）后 `lcdriv.hpp`；**两者之间用空行分成两个 include 块**——clang-format 只做块内排序，否则会把 `lcdriv.hpp` 排到 hal_stub 前破坏 include 顺序契约。
 
-## 5. 红线编译门禁（lcdriv_restricted，已落地）
+## 5. 红线编译门禁（lcdriv_restricted）
 
 `tests/RestrictedCompile.cpp` + target `lcdriv_restricted`：以固件同款红线 flag 编译整个伞头（hal_stub 可见下的模板实例化）：
 
@@ -79,15 +82,18 @@ endfunction()
 
 **目的**：gtest 测试用默认 flag（允许异常/RTTI），真机固件才用红线 flag——若无此目标，主机 CI 永远验证不到"库在红线编译选项下可编译"，红线违规（用了异常/RTTI/线程安全静态）直到烧固件才暴露。此目标随 `lcdriv_ut` 构建，把编译期红线合规前移到每次 CI。
 
-## 6. 已落地 suite 清册
+## 6. suite 清册（代码落地情况）
 
 | suite / 目标 | 类型 | 状态 | 内容 |
 |---|---|---|---|
 | `TestCompileTime` | gtest | **已落地** | 编译期契约：IsSupported 白名单、M/N 自由实例化与 width/height、`kBytes`、`kMadctlDefault` 推导值（见 §7 断言清单） |
 | `lcdriv_restricted` | 编译门禁（非 gtest） | **已落地** | 红线 flag + `-Werror` 编译整个伞头（见 §5） |
-| `TestBusSPI` / `TestControllerILI9341` / `TestLcdDriverSpiIli9341` | gtest | 规划中 | 用例在对应实现步设计并经 review 后补充 |
+| `TestBusSPI` | gtest | **已落地** | Bus<SPI> send/read 行为与边界 |
+| `TestControllerILI9341` | gtest | **已落地** | Controller 协议方法行为与边界（不含初始化命令表） |
+| `TestPanelMgr` | gtest | **已落地** | PanelMgr select 互斥 / deselect / reset 脉冲与边界 |
+| `TestLcdDriverSpiIli9341` | gtest（MT） | 规划中 | 用例在 Driver 实现步设计并经 review 后补充 |
 
-## 7. TestCompileTime 已实现断言清单（供 review）
+## 7. TestCompileTime 断言清单
 
 - `static_assert`：`IsSupported<SPI,ILI9341>` 为真；I2C+ILI9341 / SPI+ST7789 / I2C+ST7789 为假（A1）。
 - `static_assert`：`kBytes == M*N*2`（240×320、320×240 → 153600；240×100 → 48000）（A3）。

@@ -3,4 +3,5 @@
 
 #include "lcdriv/bus.hpp"
 #include "lcdriv/controller.hpp"
-#include "lcdriv/lcddriver.hpp"
+#include "lcdriv/lcdDriver.hpp"
+#include "lcdriv/panelMgr.hpp"

@@ -24,9 +24,6 @@ Checks: >
   performance-*,
   portability-*,
   readability-*,
-  -readability-identifier-naming,
-  -readability-convert-member-functions-to-static,
-  -readability-non-const-parameter,
   -readability-magic-numbers,
   -readability-identifier-length,
 
