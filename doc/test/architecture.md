@@ -44,7 +44,9 @@ tests/
     └── mock_bus.hpp           # 规划中
 ```
 
-**命名规则**：文件与 gtest suite 名 = `TestXxx`；测试文件与算法文档一一对应——`Bus spec ↔ Bus/TestBusSPI`、`Controller spec ↔ Controller/TestControllerILI9341`、`Driver spec ↔ Mt/TestLcdDriverSpiIli9341`；扩展一个搭配加一个新文件，旧文件不动。用例名约定 `行为_对象`（在各 suite 的用例设计中执行）。
+**命名规则**：文件与 gtest suite 名 = `TestXxx`；测试文件与算法文档一一对应——`Bus spec ↔ Bus/TestBusSPI`、`Controller spec ↔ Controller/TestControllerILI9341`、`Driver spec ↔ Mt/TestLcdDriverSpiIli9341`；扩展一个搭配加一个新文件，旧文件不动。用例名 = **英文 camelCase 标识符**（如 `sendZeroLengthNoOp`），直接写进 `TEST_F` 便于检索定位。
+
+**UT 类风格**（参照 FlowHub）：每个 suite 一个 fixture 类（`class TestBusSPI : public ::testing::Test`），公共夹具（句柄、reset 等）放 `protected` 并在 `SetUp()` 初始化；用例用 `TEST_F(TestBusSPI, 用例名)`，共享夹具不重复初始化。
 
 ## 4. CMake 规范
 

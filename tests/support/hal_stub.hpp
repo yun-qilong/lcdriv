@@ -67,13 +67,21 @@ struct GpioWrite
     GPIO_PinState state;
 };
 
+struct CallEvent
+{
+    char kind;         // 'T'=tx 'R'=rx 'G'=gpio 'D'=delay
+    std::size_t index; // 在对应列表中的序号（0 起）
+};
+
 struct Transcript
 {
     std::vector<TxCall> tx;
     std::vector<RxCall> rx;
     std::vector<GpioWrite> gpio;
     std::vector<uint32_t> delays;
+    std::vector<CallEvent> events; // 全局调用序（跨类型），供顺序断言
     std::vector<uint8_t> rxPreset;
+    std::size_t rxPresetPos = 0;
 
     void reset()
     {
@@ -81,7 +89,9 @@ struct Transcript
         rx.clear();
         gpio.clear();
         delays.clear();
+        events.clear();
         rxPreset.clear();
+        rxPresetPos = 0;
     }
 
     const TxCall *lastTx() const

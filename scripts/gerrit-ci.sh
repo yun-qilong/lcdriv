@@ -43,6 +43,7 @@ done
 
 RESULT_FILE="${BUILD_DIR}/ci-result.json"
 GERRIT_URL="ssh://${GERRIT_USER}@${GERRIT_HOST}:${GERRIT_PORT}/${PROJECT}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # ---- 工具函数 -------------------------------------------------------
 FAILED_COUNT=0
@@ -51,9 +52,7 @@ run_check() {
   local name="$1"
   local category="$2"
   shift 2
-  local start_time
-  local end_time
-  local exit_code
+  local start_time end_time exit_code
 
   start_time=$(date +%s)
   set +e
@@ -62,15 +61,13 @@ run_check() {
   set -e
   end_time=$(date +%s)
 
-  local status="SUCCESS"
-  local summary="passed"
+  local status="SUCCESS" summary="passed"
   if [[ $exit_code -ne 0 ]]; then
     status="FAILED"
     summary="failed (exit code ${exit_code})"
     FAILED_COUNT=$((FAILED_COUNT + 1))
   fi
 
-  # 追加到 JSON 结果
   cat >> "${RESULT_FILE}.tmp" <<JSON
   {
     "name": "${name}",
@@ -85,7 +82,6 @@ JSON
 }
 
 finish_result() {
-  # 移除末尾逗号，闭合 JSON
   sed -i '$ s/,$//' "${RESULT_FILE}.tmp"
   echo ']' >> "${RESULT_FILE}.tmp"
   mv "${RESULT_FILE}.tmp" "${RESULT_FILE}"
@@ -103,11 +99,10 @@ main() {
   echo "Ref     : ${GERRIT_REF}"
   echo "Host    : ${GERRIT_HOST}:${GERRIT_PORT}"
 
-  # 准备构建目录
   rm -rf "${BUILD_DIR}"
   mkdir -p "${BUILD_DIR}"
 
-  # 拉取代码：基于最新目标分支 + cherry-pick change
+  # ---- 拉取代码 ---------------------------------------------------
   echo ""
   echo ">>> 拉取代码: branch=${BRANCH} ref=${GERRIT_REF}"
   git init "${BUILD_DIR}/src"
@@ -122,97 +117,35 @@ main() {
     git checkout "${CHERRY_SHA}"
   fi
 
-  # 获取变更文件用于 clang-tidy diff 模式
   local BASE_SHA
   BASE_SHA=$(git rev-parse HEAD~1 2>/dev/null || echo "HEAD")
   local CHANGED_FILES
   CHANGED_FILES=$(git diff --name-only --diff-filter=ACMR "${BASE_SHA}" HEAD -- '*.cpp' '*.hpp' || true)
-
   popd > /dev/null
-  local SRC_DIR="${BUILD_DIR}/src"
 
-  # 源码落地前守卫：无 CMakeLists.txt 时跳过 build/unit-tests/clang-tidy（CMake 落地后自动恢复）
-  local HAS_CMAKE=1
-  if [[ ! -f "${SRC_DIR}/CMakeLists.txt" ]]; then
-    echo ">>> SKIP: 无 CMakeLists.txt（源码未落地），跳过 build/unit-tests/clang-tidy"
-    HAS_CMAKE=0
-  fi
-
-  # 初始化 JSON 结果
+  export BUILD_DIR SRC_DIR="${BUILD_DIR}/src" CHANGED_FILES
   echo '[' > "${RESULT_FILE}.tmp"
 
-  # ---- 1. 编译 -------------------------------------------------------
-  echo ""
-  echo ">>> 编译"
-  if [[ ${HAS_CMAKE} -eq 0 ]]; then
-    run_check "build" "build" bash -c "echo 'SKIP: no CMakeLists.txt'; exit 0"
-  else
-    run_check "build" "build" bash -c "
-      cmake -B '${BUILD_DIR}/build' '${SRC_DIR}' \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DLCDRIV_BUILD_TESTS=ON \
-        -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-        && cmake --build '${BUILD_DIR}/build' --target lcdriv_ut -j \$(nproc)
-    "
-  fi
+  # ---- 各步骤（独立脚本）-----------------------------------------
+  local steps=(
+    "build:build:${SCRIPT_DIR}/ci/step-build.sh"
+    "unit-tests:test:${SCRIPT_DIR}/ci/step-test.sh"
+    "clang-format:style:${SCRIPT_DIR}/ci/step-format.sh"
+    "clang-tidy:static-analysis:${SCRIPT_DIR}/ci/step-tidy.sh"
+  )
 
-  # ---- 2. 单元测试 ---------------------------------------------------
-  echo ""
-  echo ">>> 单元测试"
-  if [[ ${HAS_CMAKE} -eq 0 ]]; then
-    run_check "unit-tests" "test" bash -c "echo 'SKIP: no CMakeLists.txt'; exit 0"
-  else
-    run_check "unit-tests" "test" bash -c "
-      cd '${BUILD_DIR}/build' && ctest --output-on-failure -L lcdriv
-    "
-  fi
+  for entry in "${steps[@]}"; do
+    local name="${entry%%:*}"
+    local rest="${entry#*:}"
+    local category="${rest%%:*}"
+    local script="${rest#*:}"
 
-  # ---- 3. clang-format 检查 (仅变更文件) ----------------------------
-  echo ""
-  echo ">>> clang-format 检查"
-  export CHANGED_FILES
-  run_check "clang-format" "style" bash -c '
-    if [[ -z "${CHANGED_FILES}" ]]; then
-      echo "no changed C++ files"
-      exit 0
-    fi
-    command -v clang-format >/dev/null 2>&1 || { echo "clang-format not found"; exit 1; }
-    rc=0
-    for f in ${CHANGED_FILES}; do
-      [[ -f "${f}" ]] || continue
-      echo "  checking: ${f}"
-      clang-format --dry-run --Werror "${f}" || rc=1
-    done
-    exit ${rc}
-  '
+    echo ""
+    echo ">>> ${name}"
+    run_check "${name}" "${category}" bash "${script}"
+  done
 
-  # ---- 4. clang-tidy -------------------------------------------------
-  echo ""
-  echo ">>> clang-tidy"
-  echo "=== diagnostics ==="
-  which clang-tidy-14 || echo "clang-tidy-14 NOT FOUND"
-  clang-tidy-14 --version || echo "version check failed"
-  echo "HeaderFilterRegex:"
-  grep HeaderFilterRegex "${SRC_DIR}/.clang-tidy" || echo "NOT FOUND"
-  echo "==================="
-  # tidy gate：库头不自包含（include 顺序契约），须经 TU 分析；固定用
-  # tests/TestCompileTime.cpp（先 include hal_stub 再 include 伞头）作探针，
-  # HeaderFilterRegex 只暴露 include/ 库代码诊断（tests/support 因 HAL 同名类型豁免）。
-  TIDY_PROBE="tests/TestCompileTime.cpp"
-  if [[ ${HAS_CMAKE} -eq 0 ]]; then
-    run_check "clang-tidy" "static-analysis" bash -c "echo 'SKIP: no CMakeLists.txt'; exit 0"
-  else
-    run_check "clang-tidy" "static-analysis" bash -c "
-      cd '${SRC_DIR}'
-      log=\$(clang-tidy-14 --config-file='${SRC_DIR}/.clang-tidy' \
-        -p='${BUILD_DIR}/build' -warnings-as-errors='*' '${TIDY_PROBE}' 2>&1)
-      echo \"\${log}\"
-      echo \"\${log}\" | grep -qE 'error:' && exit 1
-      exit 0
-    "
-  fi
-
-  # ---- 收尾 ----------------------------------------------------------
+  # ---- 收尾 -------------------------------------------------------
   finish_result
 
   echo ""

@@ -15,6 +15,7 @@ function(lcdriv_add_ut TEST_NAME)
 endfunction()
 
 lcdriv_add_ut(TestCompileTime SOURCES TestCompileTime.cpp)
+lcdriv_add_ut(TestBusSPI SOURCES Bus/TestBusSPI.cpp support/hal_stub.cpp)
 
 add_executable(lcdriv_restricted RestrictedCompile.cpp)
 target_include_directories(lcdriv_restricted PRIVATE

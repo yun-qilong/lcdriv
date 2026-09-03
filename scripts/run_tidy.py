@@ -96,7 +96,8 @@ def filter_stderr(stderr):
         print(stripped, file=sys.stderr)
 
 
-def build_html(results, whitelist, repo_root):
+def build_html(all_diags, is_prod_diag, whitelist, repo_root):
+    """HTML 报告：按诊断文件路径分组，只显示产品代码诊断。"""
     lines = []
     lines.append("<!DOCTYPE html>")
     lines.append('<html lang="en"><head><meta charset="UTF-8">')
@@ -118,52 +119,46 @@ def build_html(results, whitelist, repo_root):
     lines.append(".diag:last-child{border-bottom:none}")
     lines.append(".diag.new{border-left:3px solid #f44747}")
     lines.append(".diag.mismatch{border-left:3px solid #cca700}")
+    lines.append(".diag.whitelisted{border-left:3px solid #4ec9b0}")
     lines.append(".diag .loc{color:#569cd6;margin-right:8px}")
     lines.append(".diag .check{color:#808080;margin-left:12px}")
     lines.append(".diag .msg{color:#d4d4d4}")
     lines.append("</style></head><body>")
     lines.append("<h1>clang-tidy report</h1>")
 
-    total_files = len(results)
+    # 按诊断文件路径分组（header-only 库：同一头文件的诊断来自多个 TU）
+    by_file = {}
+    for d in all_diags:
+        if is_prod_diag(d):
+            rp = rel_path(Path(d.file), repo_root)
+            by_file.setdefault(rp, []).append(d)
+
     total_violations = 0
 
-    for fr in results:
-        rp = rel_path(fr.path, repo_root)
+    for rp in sorted(by_file):
+        diags = by_file[rp]
         wl_checks = whitelist.get(rp, {})
+        # 按 (line, check) 去重计数
+        seen = set()
         actual_counts = {}
-        for d in fr.diags:
-            actual_counts[d.check] = actual_counts.get(d.check, 0) + 1
-
-        violations_count = 0
-        for d in fr.diags:
-            expected = wl_checks.get(d.check)
-            if expected is None or expected != actual_counts[d.check]:
-                violations_count += 1
-                total_violations += 1
-
-    lines.append('<div class="summary">')
-    lines.append(f'<div><div class="num">{total_files}</div>product files</div>')
-    lines.append(f'<div><div class="num err">{total_violations}</div>violations</div>')
-    lines.append("</div>")
-
-    for fr in results:
-        rp = rel_path(fr.path, repo_root)
-        wl_checks = whitelist.get(rp, {})
-        actual_counts = {}
-        for d in fr.diags:
-            actual_counts[d.check] = actual_counts.get(d.check, 0) + 1
+        for d in diags:
+            dk = (d.line, d.check)
+            if dk not in seen:
+                seen.add(dk)
+                actual_counts[d.check] = actual_counts.get(d.check, 0) + 1
 
         violations_in_file = []
-        for d in fr.diags:
+        for d in diags:
             expected = wl_checks.get(d.check)
             if expected is None:
                 violations_in_file.append(("new", d))
-            elif expected != actual_counts[d.check]:
+            elif expected != actual_counts.get(d.check, 0):
                 violations_in_file.append(("mismatch", d))
 
         if not violations_in_file:
             continue
 
+        total_violations += len(violations_in_file)
         lines.append('<div class="file-block">')
         lines.append(f'<div class="file-header"><span>{html_mod.escape(rp)}'
                      f'</span><span>{len(violations_in_file)} violations</span></div>')
@@ -182,6 +177,11 @@ def build_html(results, whitelist, repo_root):
             lines.append("</div>")
 
         lines.append("</div>")
+
+    lines.append('<div class="summary">')
+    lines.append(f'<div><div class="num">{len(by_file)}</div>product files</div>')
+    lines.append(f'<div><div class="num err">{total_violations}</div>violations</div>')
+    lines.append("</div>")
 
     if total_violations == 0:
         lines.append('<p style="color:#4ec9b0">All clear &#10003;</p>')
@@ -224,18 +224,12 @@ def should_ignore(rpath, check, ignore_rules):
     return False
 
 
-def check_whitelist(results, whitelist, repo_root):
+def check_whitelist_diag(diag_counts, whitelist):
+    """按诊断文件路径聚合的白名单比对（header-only 库用）。"""
     violations = []
     has_new = False
 
-    actual_counts = {}
-    for fr in results:
-        rp = rel_path(fr.path, repo_root)
-        for d in fr.diags:
-            key = (rp, d.check)
-            actual_counts[key] = actual_counts.get(key, 0) + 1
-
-    for (rp, check), count in sorted(actual_counts.items()):
+    for (rp, check), count in sorted(diag_counts.items()):
         expected = whitelist.get(rp, {}).get(check)
         if expected is None:
             violations.append(
@@ -251,7 +245,7 @@ def check_whitelist(results, whitelist, repo_root):
     for rp, checks in whitelist.items():
         for check, expected in checks.items():
             key = (rp, check)
-            if key not in actual_counts:
+            if key not in diag_counts:
                 stale_items.append(
                     f"  STALE: {rp}: {check} "
                     f"(whitelist: {expected}, actual: 0)")
@@ -283,7 +277,19 @@ def resolve_tidy_bin():
 
 
 def main():
-    build_dir = Path("build")
+    import argparse
+    parser = argparse.ArgumentParser(description="Run clang-tidy with whitelist support")
+    parser.add_argument("--build-dir", type=Path, default=Path("build"),
+                        help="Build directory containing compile_commands.json")
+    parser.add_argument("--update-whitelist", action="store_true",
+                        help="Update .tidy-whitelist.json with current diagnostics")
+    args = parser.parse_args()
+
+    build_dir = args.build_dir
+    if not build_dir.exists():
+        print(f"ERROR: build directory not found: {build_dir}", file=sys.stderr)
+        sys.exit(1)
+
     ccdb_path = build_dir / "compile_commands.json"
     ccdb_full_path = build_dir / "compile_commands_full.json"
     whitelist_path = Path(".tidy-whitelist.json")
@@ -359,30 +365,50 @@ def main():
                      if not should_ignore(rel_path(d.file, repo_root),
                                           d.check, ignore_rules)]
 
-    ut_results = [r for r in all_results if "/ut/" in str(r.path)]
-    prod_results = [r for r in all_results if "/ut/" not in str(r.path)]
+    # 按诊断文件路径分桶（而非 TU 路径）：
+    #   header-only 库的所有 TU 都在 tests/，但 HeaderFilterRegex 暴露的
+    #   include/ 诊断才是产品代码门禁目标。
+    def _is_prod_diag(diag):
+        rp = rel_path(Path(diag.file), repo_root)
+        return rp.startswith("include/")
 
-    print(f"\nUT files: {len(ut_results)} (skipped)")
-    print(f"Product files: {len(prod_results)}")
+    # 收集所有诊断，按文件分桶
+    all_diags = []
+    for fr in all_results:
+        for d in fr.diags:
+            all_diags.append(d)
 
+    prod_diag_count = sum(1 for d in all_diags if _is_prod_diag(d))
+    ut_diag_count = len(all_diags) - prod_diag_count
+
+    print(f"\nDiagnostics: {len(all_diags)} total"
+          f" ({prod_diag_count} product, {ut_diag_count} test)")
+
+    # 白名单按 (诊断文件, 行号, check) 去重计数——与 TU 数量解耦
     whitelist = load_whitelist(whitelist_path)
-    update_wl = "--update-whitelist" in sys.argv
+    update_wl = args.update_whitelist
+
+    prod_by_file_check = {}
+    seen_keys = set()
+    for d in all_diags:
+        if _is_prod_diag(d):
+            rp = rel_path(Path(d.file), repo_root)
+            dedup_key = (rp, d.line, d.check)
+            if dedup_key not in seen_keys:
+                seen_keys.add(dedup_key)
+                file_check_key = (rp, d.check)
+                prod_by_file_check[file_check_key] = prod_by_file_check.get(file_check_key, 0) + 1
 
     if update_wl:
         new_wl = {}
-        for fr in prod_results:
-            rp = rel_path(fr.path, repo_root)
-            check_counts = {}
-            for d in fr.diags:
-                check_counts[d.check] = check_counts.get(d.check, 0) + 1
-            if check_counts:
-                new_wl[rp] = dict(sorted(check_counts.items()))
+        for (rp, check), count in sorted(prod_by_file_check.items()):
+            new_wl.setdefault(rp, {})[check] = count
         whitelist_path.write_text(json.dumps(new_wl, indent=2) + "\n")
         print(f"Whitelist updated: {whitelist_path}")
         print("Tidy check complete")
         return
 
-    violated, violations = check_whitelist(prod_results, whitelist, repo_root)
+    violated, violations = check_whitelist_diag(prod_by_file_check, whitelist)
 
     if violations:
         print(f"\n--- WHITELIST VIOLATIONS ---")
@@ -391,7 +417,7 @@ def main():
         print(f"--- {len(violations)} violations ---\n")
 
     report_path = build_dir / "tidy-report.html"
-    html_content = build_html(prod_results, whitelist, repo_root)
+    html_content = build_html(all_diags, _is_prod_diag, whitelist, repo_root)
     report_path.write_text(html_content)
     print(f"Report: {report_path}")
 

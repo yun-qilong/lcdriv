@@ -1,1 +1,5 @@
-{}
+{
+  "include/lcdriv/bus.hpp": {
+    "cppcoreguidelines-pro-type-const-cast": 1
+  }
+}
