@@ -1,6 +1,9 @@
 {
   "include/lcdriv/bus.hpp": {
-    "cppcoreguidelines-pro-type-const-cast": 1
+    "cppcoreguidelines-avoid-non-const-global-variables": 1,
+    "cppcoreguidelines-pro-bounds-pointer-arithmetic": 1,
+    "cppcoreguidelines-pro-type-const-cast": 3,
+    "readability-identifier-naming": 1
   },
   "include/lcdriv/controller.hpp": {
     "cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays": 7,

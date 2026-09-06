@@ -23,11 +23,16 @@ class TestBusSPI : public ::testing::Test
 
     SPI_HandleTypeDef h1;
     SPI_HandleTypeDef h2;
+    GPIO_TypeDef p0;
+    GPIO_TypeDef p1;
+    GpioPin cs[2] = {{&p0, GPIO_PIN_0}, {&p1, GPIO_PIN_1}};
+    GpioPin rst[2] = {{&p0, GPIO_PIN_8}, {&p1, GPIO_PIN_9}};
+    PanelMgr<2> mgr{cs, rst};
 };
 
 TEST_F(TestBusSPI, ctorStoresHandle)
 {
-    Bus<BusType::SPI> bus(&h1);
+    Bus<BusType::SPI, 2> bus(&h1, &mgr);
     const uint8_t b = 0xAA;
     bus.send(&b, 1);
 
@@ -38,7 +43,7 @@ TEST_F(TestBusSPI, ctorStoresHandle)
 
 TEST_F(TestBusSPI, sendForwardsSingleByte)
 {
-    Bus<BusType::SPI> bus(&h1);
+    Bus<BusType::SPI, 2> bus(&h1, &mgr);
     const uint8_t b = 0x01;
     bus.send(&b, 1);
 
@@ -48,7 +53,7 @@ TEST_F(TestBusSPI, sendForwardsSingleByte)
 
 TEST_F(TestBusSPI, sendForwardsLongBlock)
 {
-    Bus<BusType::SPI> bus(&h1);
+    Bus<BusType::SPI, 2> bus(&h1, &mgr);
     std::vector<uint8_t> v(30000);
     for (std::size_t i = 0; i < v.size(); ++i)
     {
@@ -62,7 +67,7 @@ TEST_F(TestBusSPI, sendForwardsLongBlock)
 
 TEST_F(TestBusSPI, sendAcceptsMaxLength)
 {
-    Bus<BusType::SPI> bus(&h1);
+    Bus<BusType::SPI, 2> bus(&h1, &mgr);
     std::vector<uint8_t> v(65535, 0x55);
     bus.send(v.data(), static_cast<uint16_t>(v.size()));
 
@@ -73,7 +78,7 @@ TEST_F(TestBusSPI, sendAcceptsMaxLength)
 
 TEST_F(TestBusSPI, sendZeroLengthNoOp)
 {
-    Bus<BusType::SPI> bus(&h1);
+    Bus<BusType::SPI, 2> bus(&h1, &mgr);
     bus.send(nullptr, 0);
 
     EXPECT_TRUE(hal::g_transcript.tx.empty());
@@ -81,7 +86,7 @@ TEST_F(TestBusSPI, sendZeroLengthNoOp)
 
 TEST_F(TestBusSPI, sendRecordsPerCallInOrder)
 {
-    Bus<BusType::SPI> bus(&h1);
+    Bus<BusType::SPI, 2> bus(&h1, &mgr);
     const uint8_t a = 1;
     const uint8_t b = 2;
     bus.send(&a, 1);
@@ -94,7 +99,7 @@ TEST_F(TestBusSPI, sendRecordsPerCallInOrder)
 
 TEST_F(TestBusSPI, sendFromBufferOffset)
 {
-    Bus<BusType::SPI> bus(&h1);
+    Bus<BusType::SPI, 2> bus(&h1, &mgr);
     const std::vector<uint8_t> v = {0x00, 0x01, 0x02, 0x03};
     bus.send(v.data() + 1, 2);
 
@@ -104,7 +109,7 @@ TEST_F(TestBusSPI, sendFromBufferOffset)
 
 TEST_F(TestBusSPI, sendLeavesBufferUntouched)
 {
-    Bus<BusType::SPI> bus(&h1);
+    Bus<BusType::SPI, 2> bus(&h1, &mgr);
     std::vector<uint8_t> v(100);
     for (std::size_t i = 0; i < v.size(); ++i)
     {
@@ -118,7 +123,7 @@ TEST_F(TestBusSPI, sendLeavesBufferUntouched)
 
 TEST_F(TestBusSPI, readFillsFromPreset)
 {
-    Bus<BusType::SPI> bus(&h1);
+    Bus<BusType::SPI, 2> bus(&h1, &mgr);
     hal::g_transcript.rxPreset = {0x93, 0x41, 0x00};
     uint8_t buf[3] = {};
     bus.read(buf, 3);
@@ -131,7 +136,7 @@ TEST_F(TestBusSPI, readFillsFromPreset)
 
 TEST_F(TestBusSPI, readConsumesPresetInOrder)
 {
-    Bus<BusType::SPI> bus(&h1);
+    Bus<BusType::SPI, 2> bus(&h1, &mgr);
     hal::g_transcript.rxPreset = {1, 2, 3, 4};
     uint8_t a[2] = {};
     uint8_t b[2] = {};
@@ -145,7 +150,7 @@ TEST_F(TestBusSPI, readConsumesPresetInOrder)
 
 TEST_F(TestBusSPI, readZeroLengthNoOp)
 {
-    Bus<BusType::SPI> bus(&h1);
+    Bus<BusType::SPI, 2> bus(&h1, &mgr);
     uint8_t buf[1] = {};
     bus.read(buf, 0);
 
@@ -154,7 +159,7 @@ TEST_F(TestBusSPI, readZeroLengthNoOp)
 
 TEST_F(TestBusSPI, readFillsZeroWhenPresetExhausted)
 {
-    Bus<BusType::SPI> bus(&h1);
+    Bus<BusType::SPI, 2> bus(&h1, &mgr);
     hal::g_transcript.rxPreset = {0x93};
     uint8_t buf[3] = {};
     bus.read(buf, 3);
@@ -167,8 +172,8 @@ TEST_F(TestBusSPI, readFillsZeroWhenPresetExhausted)
 
 TEST_F(TestBusSPI, mixedOpsKeepHandleAndOrder)
 {
-    Bus<BusType::SPI> a(&h1);
-    Bus<BusType::SPI> b(&h2);
+    Bus<BusType::SPI, 2> a(&h1, &mgr);
+    Bus<BusType::SPI, 2> b(&h2, &mgr);
     const uint8_t x = 1;
     const uint8_t y = 2;
     uint8_t z = 0;
@@ -190,4 +195,99 @@ TEST_F(TestBusSPI, mixedOpsKeepHandleAndOrder)
     EXPECT_EQ(ev[1].index, 1u);
     EXPECT_EQ(ev[2].kind, 'R');
     EXPECT_EQ(ev[2].index, 0u);
+}
+
+class TestBusSPIBulk : public ::testing::Test
+{
+  protected:
+    void SetUp() override
+    {
+        hal::g_transcript.reset();
+    }
+
+    void TearDown() override
+    {
+        EXPECT_TRUE(hal::g_transcript.delays.empty());
+    }
+
+    SPI_HandleTypeDef h1;
+    GPIO_TypeDef p0;
+    GPIO_TypeDef p1;
+    GpioPin cs[2] = {{&p0, GPIO_PIN_0}, {&p1, GPIO_PIN_1}};
+    GpioPin rst[2] = {{&p0, GPIO_PIN_8}, {&p1, GPIO_PIN_9}};
+    PanelMgr<2> mgr{cs, rst};
+};
+
+TEST_F(TestBusSPIBulk, sendBulkChunksAt65535)
+{
+    Bus<BusType::SPI, 2, false> bus(&h1, &mgr);
+    std::vector<uint8_t> px(153600, 0xAB);
+    bus.sendBulk(px.data(), 153600);
+
+    ASSERT_EQ(hal::g_transcript.tx.size(), 3u);
+    EXPECT_EQ(hal::g_transcript.tx[0].bytes.size(), 65535u);
+    EXPECT_EQ(hal::g_transcript.tx[1].bytes.size(), 65535u);
+    EXPECT_EQ(hal::g_transcript.tx[2].bytes.size(), 22530u);
+
+    ASSERT_FALSE(hal::g_transcript.gpio.empty());
+    EXPECT_EQ(hal::g_transcript.gpio.back().state, GPIO_PIN_SET);
+}
+
+TEST_F(TestBusSPIBulk, sendBulkSingleChunk)
+{
+    Bus<BusType::SPI, 2, false> bus(&h1, &mgr);
+    std::vector<uint8_t> px(48000, 0xCD);
+    bus.sendBulk(px.data(), 48000);
+
+    ASSERT_EQ(hal::g_transcript.tx.size(), 1u);
+    EXPECT_EQ(hal::g_transcript.tx[0].bytes.size(), 48000u);
+
+    ASSERT_FALSE(hal::g_transcript.gpio.empty());
+    EXPECT_EQ(hal::g_transcript.gpio.back().state, GPIO_PIN_SET);
+}
+
+TEST_F(TestBusSPIBulk, sendBulkZeroNoOp)
+{
+    Bus<BusType::SPI, 2, false> bus(&h1, &mgr);
+    bus.sendBulk(nullptr, 0);
+
+    EXPECT_TRUE(hal::g_transcript.tx.empty());
+    EXPECT_TRUE(hal::g_transcript.gpio.empty());
+}
+
+TEST_F(TestBusSPIBulk, sendBulkDmaStartsAndReturns)
+{
+    Bus<BusType::SPI, 2, true> bus(&h1, &mgr);
+    std::vector<uint8_t> px(153600, 0xAB);
+    bus.sendBulk(px.data(), 153600);
+
+    ASSERT_EQ(hal::g_transcript.dmaStarts.size(), 1u);
+    EXPECT_EQ(hal::g_transcript.dmaStarts[0].h, &h1);
+    EXPECT_EQ(hal::g_transcript.dmaStarts[0].bytes.size(), 65535u);
+    EXPECT_TRUE(hal::g_transcript.gpio.empty());
+}
+
+TEST_F(TestBusSPIBulk, sendBulkDmaChainsThenDeselectLast)
+{
+    Bus<BusType::SPI, 2, true> bus(&h1, &mgr);
+    std::vector<uint8_t> px(153600, 0xAB);
+    bus.sendBulk(px.data(), 153600);
+
+    ASSERT_EQ(hal::g_transcript.dmaStarts.size(), 1u);
+    EXPECT_EQ(hal::g_transcript.dmaStarts[0].bytes.size(), 65535u);
+
+    hal::fireTxDmaComplete(&h1);
+    ASSERT_EQ(hal::g_transcript.dmaStarts.size(), 2u);
+    EXPECT_EQ(hal::g_transcript.dmaStarts[1].bytes.size(), 65535u);
+    EXPECT_TRUE(hal::g_transcript.gpio.empty());
+
+    hal::fireTxDmaComplete(&h1);
+    ASSERT_EQ(hal::g_transcript.dmaStarts.size(), 3u);
+    EXPECT_EQ(hal::g_transcript.dmaStarts[2].bytes.size(), 22530u);
+    EXPECT_TRUE(hal::g_transcript.gpio.empty());
+
+    hal::fireTxDmaComplete(&h1);
+    EXPECT_EQ(hal::g_transcript.dmaStarts.size(), 3u);
+    ASSERT_FALSE(hal::g_transcript.gpio.empty());
+    EXPECT_EQ(hal::g_transcript.gpio.back().state, GPIO_PIN_SET);
 }

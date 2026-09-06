@@ -10,6 +10,7 @@ struct GPIO_TypeDef
 struct SPI_HandleTypeDef
 {
     int tag = 0;
+    void (*txCpltCallback)(SPI_HandleTypeDef *) = nullptr;
 };
 
 typedef enum
@@ -45,6 +46,11 @@ typedef enum
     HAL_TIMEOUT = 0x03U
 } HAL_StatusTypeDef;
 
+typedef enum
+{
+    HAL_SPI_TX_COMPLETE_CB_ID
+} HAL_SPI_CallbackIDTypeDef;
+
 namespace hal
 {
 
@@ -73,15 +79,29 @@ struct CallEvent
     std::size_t index; // 在对应列表中的序号（0 起）
 };
 
+struct DmaStart
+{
+    const SPI_HandleTypeDef *h;
+    std::vector<uint8_t> bytes;
+};
+
+struct DmaCompletion
+{
+    void (*fn)(SPI_HandleTypeDef *);
+    SPI_HandleTypeDef *h;
+};
+
 struct Transcript
 {
     std::vector<TxCall> tx;
     std::vector<RxCall> rx;
     std::vector<GpioWrite> gpio;
     std::vector<uint32_t> delays;
-    std::vector<CallEvent> events; // 全局调用序（跨类型），供顺序断言
+    std::vector<CallEvent> events;
     std::vector<uint8_t> rxPreset;
     std::size_t rxPresetPos = 0;
+    std::vector<DmaStart> dmaStarts;
+    std::vector<DmaCompletion> dmaCompletions;
 
     void reset()
     {
@@ -92,6 +112,8 @@ struct Transcript
         events.clear();
         rxPreset.clear();
         rxPresetPos = 0;
+        dmaStarts.clear();
+        dmaCompletions.clear();
     }
 
     const TxCall *lastTx() const
@@ -109,6 +131,8 @@ struct Transcript
 
 extern Transcript g_transcript;
 
+void fireTxDmaComplete(SPI_HandleTypeDef *hspi);
+
 } // namespace hal
 
 HAL_StatusTypeDef HAL_SPI_Transmit(SPI_HandleTypeDef *hspi, uint8_t *pData, uint16_t Size,
@@ -120,3 +144,8 @@ HAL_StatusTypeDef HAL_SPI_Receive(SPI_HandleTypeDef *hspi, uint8_t *pData, uint1
 void HAL_GPIO_WritePin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin, GPIO_PinState PinState);
 
 void HAL_Delay(uint32_t Delay);
+
+HAL_StatusTypeDef HAL_SPI_Transmit_DMA(SPI_HandleTypeDef *hspi, uint8_t *pData, uint16_t Size);
+
+HAL_StatusTypeDef HAL_SPI_RegisterCallback(SPI_HandleTypeDef *hspi, HAL_SPI_CallbackIDTypeDef cbId,
+                                           void (*callback)(SPI_HandleTypeDef *));

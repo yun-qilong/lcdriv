@@ -1,5 +1,6 @@
 #include "hal_stub.hpp"
 
+#include <cstring>
 #include <utility>
 
 namespace hal
@@ -56,3 +57,39 @@ void HAL_Delay(uint32_t Delay)
     hal::g_transcript.delays.push_back(Delay);
     hal::g_transcript.events.push_back({'D', hal::g_transcript.delays.size() - 1});
 }
+
+HAL_StatusTypeDef HAL_SPI_Transmit_DMA(SPI_HandleTypeDef *hspi, uint8_t *pData, uint16_t Size)
+{
+    hal::DmaStart ds;
+    ds.h = hspi;
+    ds.bytes.assign(pData, pData + Size);
+    hal::g_transcript.dmaStarts.push_back(std::move(ds));
+    hal::g_transcript.events.push_back({'M', hal::g_transcript.dmaStarts.size() - 1});
+    return HAL_OK;
+}
+
+HAL_StatusTypeDef HAL_SPI_RegisterCallback(SPI_HandleTypeDef *hspi, HAL_SPI_CallbackIDTypeDef cbId,
+                                           void (*callback)(SPI_HandleTypeDef *))
+{
+    (void)cbId;
+    hspi->txCpltCallback = callback;
+    return HAL_OK;
+}
+
+namespace hal
+{
+
+void fireTxDmaComplete(SPI_HandleTypeDef *hspi)
+{
+    DmaCompletion dc;
+    dc.fn = hspi->txCpltCallback;
+    dc.h = hspi;
+    g_transcript.dmaCompletions.push_back(dc);
+    g_transcript.events.push_back({'C', g_transcript.dmaCompletions.size() - 1});
+    if (hspi->txCpltCallback)
+    {
+        hspi->txCpltCallback(hspi);
+    }
+}
+
+} // namespace hal
