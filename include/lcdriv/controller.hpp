@@ -58,7 +58,8 @@ class Controller<ControllerType::ILI9341, M, N>
     template <typename B>
     void initSequence(B &bus);
 
-    friend class LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N>;
+    template <BusType, ControllerType, int, int, int, bool>
+    friend class LcdDriver;
 
     template <typename B>
     void writeReg(B &bus, uint8_t cmd, const uint8_t *data, uint16_t n);

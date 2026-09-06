@@ -32,8 +32,8 @@ struct IsSupported<BusType::SPI, ControllerType::ILI9341> : std::true_type
 {
 };
 
-template <BusType bus, ControllerType ctrl, int M, int N>
+template <BusType bus, ControllerType ctrl, int M, int N, int P = 1, bool dma = false>
 class LcdDriver;
 
-template <int M, int N>
-class LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N>;
+template <int M, int N, int P, bool dma>
+class LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>;

@@ -3,11 +3,11 @@
 
 #include "core.hpp"
 
-template <BusType bus>
+template <BusType bus, int P = 1, bool dma = false>
 class Bus;
 
-template <>
-class Bus<BusType::SPI>
+template <int P, bool dma>
+class Bus<BusType::SPI, P, dma>
 {
   public:
     explicit Bus(SPI_HandleTypeDef *spi);
@@ -18,9 +18,13 @@ class Bus<BusType::SPI>
     SPI_HandleTypeDef *spi_;
 };
 
-inline Bus<BusType::SPI>::Bus(SPI_HandleTypeDef *spi) : spi_(spi) {}
+template <int P, bool dma>
+inline Bus<BusType::SPI, P, dma>::Bus(SPI_HandleTypeDef *spi) : spi_(spi)
+{
+}
 
-inline void Bus<BusType::SPI>::send(const uint8_t *buf, uint16_t n)
+template <int P, bool dma>
+inline void Bus<BusType::SPI, P, dma>::send(const uint8_t *buf, uint16_t n)
 {
     if (n == 0)
     {
@@ -29,7 +33,8 @@ inline void Bus<BusType::SPI>::send(const uint8_t *buf, uint16_t n)
     HAL_SPI_Transmit(spi_, const_cast<uint8_t *>(buf), n, HAL_MAX_DELAY);
 }
 
-inline void Bus<BusType::SPI>::read(uint8_t *buf, uint16_t n)
+template <int P, bool dma>
+inline void Bus<BusType::SPI, P, dma>::read(uint8_t *buf, uint16_t n)
 {
     if (n == 0)
     {

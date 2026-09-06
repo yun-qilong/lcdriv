@@ -7,15 +7,15 @@
 #include "bus.hpp"
 #include "controller.hpp"
 
-template <BusType bus, ControllerType ctrl, int M, int N>
+template <BusType bus, ControllerType ctrl, int M, int N, int P, bool dma>
 class LcdDriver
 {
     static_assert(IsSupported<bus, ctrl>::value,
                   "LcdDriver: unsupported (bus, controller) combination");
 };
 
-template <int M, int N>
-class LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N>
+template <int M, int N, int P, bool dma>
+class LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>
 {
     static_assert(M > 0 && N > 0, "LcdDriver: M and N must be positive");
 
@@ -57,54 +57,57 @@ class LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N>
     void beginTransaction_();
     void endTransaction_();
 
-    std::optional<Bus<BusType::SPI>> bus_;
+    std::optional<Bus<BusType::SPI, P, dma>> bus_;
     std::optional<Controller<ControllerType::ILI9341, M, N>> ctrl_;
     GPIO_TypeDef *cs_port_ = nullptr;
     uint16_t cs_pin_ = 0;
 };
 
-template <int M, int N>
-inline bool LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N>::init(
+template <int M, int N, int P, bool dma>
+inline bool LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>::init(
     SPI_HandleTypeDef *spi, GPIO_TypeDef *cs_port, uint16_t cs_pin, GPIO_TypeDef *dc_port,
     uint16_t dc_pin, GPIO_TypeDef *rst_port, uint16_t rst_pin)
 {
     return assembly_(spi, cs_port, cs_pin, dc_port, dc_pin, rst_port, rst_pin);
 }
 
-template <int M, int N>
-inline LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N>::LcdDriver(
+template <int M, int N, int P, bool dma>
+inline LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>::LcdDriver(
     SPI_HandleTypeDef *spi, GPIO_TypeDef *cs_port, uint16_t cs_pin, GPIO_TypeDef *dc_port,
     uint16_t dc_pin, GPIO_TypeDef *rst_port, uint16_t rst_pin)
 {
     assembly_(spi, cs_port, cs_pin, dc_port, dc_pin, rst_port, rst_pin);
 }
 
-template <int M, int N>
-inline void LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N>::pushFrame(const uint8_t *px)
+template <int M, int N, int P, bool dma>
+inline void
+LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>::pushFrame(const uint8_t *px)
 {
     (void)px;
 }
 
-template <int M, int N>
-inline void LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N>::fillScreen(uint16_t color)
+template <int M, int N, int P, bool dma>
+inline void
+LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>::fillScreen(uint16_t color)
 {
     (void)color;
 }
 
-template <int M, int N>
-inline uint32_t LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N>::readID()
+template <int M, int N, int P, bool dma>
+inline uint32_t LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>::readID()
 {
     return 0;
 }
 
-template <int M, int N>
-inline void LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N>::setOrientation(uint8_t madctl)
+template <int M, int N, int P, bool dma>
+inline void
+LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>::setOrientation(uint8_t madctl)
 {
     (void)madctl;
 }
 
-template <int M, int N>
-inline bool LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N>::assembly_(
+template <int M, int N, int P, bool dma>
+inline bool LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>::assembly_(
     SPI_HandleTypeDef *spi, GPIO_TypeDef *cs_port, uint16_t cs_pin, GPIO_TypeDef *dc_port,
     uint16_t dc_pin, GPIO_TypeDef *rst_port, uint16_t rst_pin)
 {
@@ -118,12 +121,12 @@ inline bool LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N>::assembly_(
     return true;
 }
 
-template <int M, int N>
-inline void LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N>::beginTransaction_()
+template <int M, int N, int P, bool dma>
+inline void LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>::beginTransaction_()
 {
 }
 
-template <int M, int N>
-inline void LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N>::endTransaction_()
+template <int M, int N, int P, bool dma>
+inline void LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>::endTransaction_()
 {
 }
