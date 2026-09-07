@@ -128,6 +128,10 @@ ctest --test-dir build --output-on-failure
 - 消费方以发布分支/标签作为依赖版本（`GIT_TAG` 指向发布分支/标签）。
 - 协议相关数据（初始化序列、MADCTL 实测值）变更须硬件重新实测，并同步 Controller spec 与对应测试。
 
+## License
+
+[MIT](LICENSE)。本库架构为独立设计；ILI9341 初始化序列取自数据手册，做法参考 [Adafruit_ILI9341](https://github.com/adafruit/Adafruit_ILI9341)（MIT）。
+
 ## 文档导航
 
 - [doc/README.md](doc/README.md) —— spec 索引与阅读顺序
