@@ -20,6 +20,7 @@
    #include "lcdriv.hpp"   // 库伞头
    ```
 3. **`dma=true` 需开启 HAL 回调注册**：在 CubeMX 里 `Project Manager → Advanced Settings → SPI → Register Callback = Enable`（等价于 `stm32xxx_hal_conf.h` 中 `USE_HAL_SPI_REGISTER_CALLBACKS 1U`）。不开则只能走弱回调，会破坏 header-only。
+![alt text](image.png)
 4. **`dma=true` 帧缓冲内存**：帧缓冲须放 **DMA 可达内存**（如 AXI SRAM `0x24000000`，**不能放 DTCM**），并保证 **D-Cache 一致性**（关 D-Cache / MPU 设 non-cacheable / 传输前 `SCB_CleanDCache`）。
 5. **字节序**：RGB565 像素**高字节在前**（`0xF800` → `0xF8 0x00`）；帧缓冲用字节数组、高字节在前，直接 DMA 不错序。
 6. 固件侧建议按红线编译：`-fno-exceptions -fno-rtti -fno-threadsafe-statics`（库自身由 `tests/RestrictedCompile.cpp` 门禁保证）。
