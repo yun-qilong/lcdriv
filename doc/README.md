@@ -18,7 +18,7 @@ doc/
 │   ├── controller/           #   Controller 层各偏特化算法 spec（新屏 = 加文件）
 │   │   └── ili9341.md        #     Controller<ILI9341, M, N>（DC 引脚；CS/RST 归 PanelMgr）
 │   └── driver/               #   Driver 层各搭配算法 spec（新搭配 = 加文件）
-│       └── spi-ili9341.md    #     LcdDriver<SPI, ILI9341, M, N, P>
+│       └── spi-ili9341.md    #     LcdDriver<SPI, ILI9341, M, N, P, dma>
 └── test/                     # 测试 spec（怎么验证）
     ├── architecture.md       #   测试框架总览：分层/mock/目录/CMake/红线门禁
     ├── panelMgr.md          #   PanelMgr UT case design（跨层组件）
