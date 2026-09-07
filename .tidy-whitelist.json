@@ -8,8 +8,6 @@
   "include/lcdriv/controller.hpp": {
     "cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays": 7,
     "cppcoreguidelines-pro-bounds-constant-array-index": 1,
-    "cppcoreguidelines-pro-bounds-pointer-arithmetic": 1,
-    "google-explicit-constructor": 1,
     "modernize-use-auto": 2,
     "readability-identifier-naming": 19
   },

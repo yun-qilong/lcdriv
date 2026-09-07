@@ -8,15 +8,6 @@
 
 #include <gtest/gtest.h>
 
-namespace
-{
-std::vector<uint8_t> slice(const std::vector<uint8_t> &v, std::size_t from, std::size_t len)
-{
-    return std::vector<uint8_t>(v.begin() + static_cast<std::ptrdiff_t>(from),
-                                v.begin() + static_cast<std::ptrdiff_t>(from + len));
-}
-} // namespace
-
 class TestControllerILI9341 : public ::testing::Test
 {
   protected:
@@ -81,7 +72,7 @@ TEST_F(TestControllerILI9341, writeDataMaxLengthSingle)
     EXPECT_EQ(bus.sends[0], v);
 }
 
-TEST_F(TestControllerILI9341, pushFramePortraitWindowChunkedPixels)
+TEST_F(TestControllerILI9341, pushFramePortraitWindowBulkPixels)
 {
     std::vector<uint8_t> px(153600);
     for (std::size_t i = 0; i < px.size(); ++i)
@@ -90,18 +81,16 @@ TEST_F(TestControllerILI9341, pushFramePortraitWindowChunkedPixels)
     }
     ctrl.pushFrame(bus, px.data());
 
-    ASSERT_EQ(bus.sends.size(), 8u);
+    ASSERT_EQ(bus.sends.size(), 5u);
     EXPECT_EQ(bus.sends[0], std::vector<uint8_t>({0x2A}));
     EXPECT_EQ(bus.sends[1], std::vector<uint8_t>({0x00, 0x00, 0x00, 0xEF}));
     EXPECT_EQ(bus.sends[2], std::vector<uint8_t>({0x2B}));
     EXPECT_EQ(bus.sends[3], std::vector<uint8_t>({0x00, 0x00, 0x01, 0x3F}));
     EXPECT_EQ(bus.sends[4], std::vector<uint8_t>({0x2C}));
-    EXPECT_EQ(bus.sends[5].size(), 65535u);
-    EXPECT_EQ(bus.sends[6].size(), 65535u);
-    EXPECT_EQ(bus.sends[7].size(), 22530u);
-    EXPECT_EQ(bus.sends[5], slice(px, 0, 65535));
-    EXPECT_EQ(bus.sends[6], slice(px, 65535, 65535));
-    EXPECT_EQ(bus.sends[7], slice(px, 131070, 22530));
+
+    ASSERT_EQ(bus.bulkCalls.size(), 1u);
+    EXPECT_EQ(bus.bulkCalls[0].size(), 153600u);
+    EXPECT_EQ(bus.bulkCalls[0], px);
 
     ASSERT_EQ(hal::g_transcript.gpio.size(), 6u);
     EXPECT_EQ(hal::g_transcript.gpio[0].state, GPIO_PIN_RESET);
@@ -118,23 +107,25 @@ TEST_F(TestControllerILI9341, pushFrameLandscapeWindow)
     std::vector<uint8_t> px(153600);
     ctrlL.pushFrame(bus, px.data());
 
-    ASSERT_EQ(bus.sends.size(), 8u);
+    ASSERT_EQ(bus.sends.size(), 5u);
     EXPECT_EQ(bus.sends[1], std::vector<uint8_t>({0x00, 0x00, 0x01, 0x3F}));
     EXPECT_EQ(bus.sends[3], std::vector<uint8_t>({0x00, 0x00, 0x00, 0xEF}));
-    EXPECT_EQ(bus.sends[5].size(), 65535u);
-    EXPECT_EQ(bus.sends[6].size(), 65535u);
-    EXPECT_EQ(bus.sends[7].size(), 22530u);
+
+    ASSERT_EQ(bus.bulkCalls.size(), 1u);
+    EXPECT_EQ(bus.bulkCalls[0].size(), 153600u);
 }
 
-TEST_F(TestControllerILI9341, pushFrameSmallSinglePixelChunk)
+TEST_F(TestControllerILI9341, pushFrameSmallSingleBulk)
 {
     Controller<ControllerType::ILI9341, 240, 100> ctrlS{dc};
     std::vector<uint8_t> px(48000);
     ctrlS.pushFrame(bus, px.data());
 
-    ASSERT_EQ(bus.sends.size(), 6u);
+    ASSERT_EQ(bus.sends.size(), 5u);
     EXPECT_EQ(bus.sends[3], std::vector<uint8_t>({0x00, 0x00, 0x00, 0x63}));
-    EXPECT_EQ(bus.sends[5].size(), 48000u);
+
+    ASSERT_EQ(bus.bulkCalls.size(), 1u);
+    EXPECT_EQ(bus.bulkCalls[0].size(), 48000u);
 }
 
 TEST_F(TestControllerILI9341, fillScreenColorRowStream)

@@ -9,6 +9,11 @@ struct MockBus
         sends.emplace_back(buf, buf + n);
     }
 
+    void sendBulk(const uint8_t *buf, uint32_t n)
+    {
+        bulkCalls.emplace_back(buf, buf + n);
+    }
+
     void read(uint8_t *buf, uint16_t n)
     {
         ++readCalls;
@@ -22,6 +27,7 @@ struct MockBus
     void reset()
     {
         sends.clear();
+        bulkCalls.clear();
         readCalls = 0;
         lastReadN = 0;
         preset.clear();
@@ -29,6 +35,7 @@ struct MockBus
     }
 
     std::vector<std::vector<uint8_t>> sends;
+    std::vector<std::vector<uint8_t>> bulkCalls;
     std::size_t readCalls = 0;
     uint16_t lastReadN = 0;
     std::vector<uint8_t> preset;
