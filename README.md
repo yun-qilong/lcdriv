@@ -1,5 +1,11 @@
 # lcdriv
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/yun-qilong/lcdriv/actions/workflows/ci.yml/badge.svg)](https://github.com/yun-qilong/lcdriv/actions/workflows/ci.yml)
+[![coverage](https://codecov.io/gh/yun-qilong/lcdriv/branch/main/graph/badge.svg)](https://codecov.io/gh/yun-qilong/lcdriv)
+![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)
+![header-only](https://img.shields.io/badge/header--only-yes-brightgreen.svg)
+
 裸机 LCD 驱动库：C++17 受限子集实现，header-only。只做单帧传输（`init` / `pushFrame` / `fillScreen` / `readID` / `setOrientation`），不带字体、不带 GFX。
 
 ## 特性
