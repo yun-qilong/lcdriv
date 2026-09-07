@@ -56,8 +56,8 @@ run_check() {
 
   start_time=$(date +%s)
   set +e
-  "$@" > "${BUILD_DIR}/${name}.log" 2>&1
-  exit_code=$?
+  "$@" 2>&1 | tee "${BUILD_DIR}/${name}.log"
+  exit_code=${PIPESTATUS[0]}
   set -e
   end_time=$(date +%s)
 
