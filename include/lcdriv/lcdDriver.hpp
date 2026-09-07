@@ -1,11 +1,13 @@
 #pragma once
 #include <cstdint>
-#include <optional>
+#include <new>
+#include <type_traits>
 
 #include "core.hpp"
 
 #include "bus.hpp"
 #include "controller.hpp"
+#include "panelMgr.hpp"
 
 template <BusType bus, ControllerType ctrl, int M, int N, int P, bool dma>
 class LcdDriver
@@ -25,20 +27,51 @@ class LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>
     LcdDriver() = default;
     LcdDriver(const LcdDriver &) = delete;
     LcdDriver &operator=(const LcdDriver &) = delete;
-    LcdDriver(LcdDriver &&) noexcept = default;
-    LcdDriver &operator=(LcdDriver &&) noexcept = default;
+    LcdDriver(LcdDriver &&) = delete;
+    LcdDriver &operator=(LcdDriver &&) = delete;
 
-    bool init(SPI_HandleTypeDef *spi, GPIO_TypeDef *cs_port, uint16_t cs_pin, GPIO_TypeDef *dc_port,
-              uint16_t dc_pin, GPIO_TypeDef *rst_port, uint16_t rst_pin);
+    bool init(SPI_HandleTypeDef *spi, GpioPin dc, const GpioPin (&cs)[P], const GpioPin (&rst)[P])
+    {
+        return assembly_(spi, dc, cs, rst);
+    }
 
-    explicit LcdDriver(SPI_HandleTypeDef *spi, GPIO_TypeDef *cs_port, uint16_t cs_pin,
-                       GPIO_TypeDef *dc_port, uint16_t dc_pin, GPIO_TypeDef *rst_port,
-                       uint16_t rst_pin);
+    explicit LcdDriver(SPI_HandleTypeDef *spi, GpioPin dc, const GpioPin (&cs)[P],
+                       const GpioPin (&rst)[P])
+    {
+        assembly_(spi, dc, cs, rst);
+    }
 
-    void pushFrame(const uint8_t *px);
-    void fillScreen(uint16_t color);
-    uint32_t readID();
-    void setOrientation(uint8_t madctl);
+    bool pushFrame(int panel, const uint8_t *px)
+    {
+        if (mgr_->select(panel))
+        {
+            ctrl_->pushFrame(*bus_, px);
+            return true;
+        }
+        return false;
+    }
+
+    void fillScreen(int panel, uint16_t color)
+    {
+        mgr_->select(panel);
+        ctrl_->fillScreen(*bus_, color);
+        mgr_->deselect();
+    }
+
+    uint32_t readID(int panel)
+    {
+        mgr_->select(panel);
+        uint32_t id = ctrl_->readID(*bus_);
+        mgr_->deselect();
+        return id;
+    }
+
+    void setOrientation(int panel, uint8_t madctl)
+    {
+        mgr_->select(panel);
+        ctrl_->setOrientation(*bus_, madctl);
+        mgr_->deselect();
+    }
 
     [[nodiscard]] int width() const
     {
@@ -50,83 +83,46 @@ class LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>
     }
 
   private:
-    bool assembly_(SPI_HandleTypeDef *spi, GPIO_TypeDef *cs_port, uint16_t cs_pin,
-                   GPIO_TypeDef *dc_port, uint16_t dc_pin, GPIO_TypeDef *rst_port,
-                   uint16_t rst_pin);
+    using BusImpl = Bus<BusType::SPI, P, dma>;
+    using CtrlImpl = Controller<ControllerType::ILI9341, M, N>;
+    using PanelMgrImpl = PanelMgr<P>;
 
-    void beginTransaction_();
-    void endTransaction_();
+    bool assembly_(SPI_HandleTypeDef *spi, GpioPin dc, const GpioPin (&cs)[P],
+                   const GpioPin (&rst)[P])
+    {
+        if (bus_)
+        {
+            bus_->~BusImpl();
+        }
+        if (ctrl_)
+        {
+            ctrl_->~CtrlImpl();
+        }
+        if (mgr_)
+        {
+            mgr_->~PanelMgrImpl();
+        }
 
-    std::optional<Bus<BusType::SPI, P, dma>> bus_;
-    std::optional<Controller<ControllerType::ILI9341, M, N>> ctrl_;
-    GPIO_TypeDef *cs_port_ = nullptr;
-    uint16_t cs_pin_ = 0;
+        mgr_ = new (&mgrBuf_) PanelMgrImpl(cs, rst);
+        ctrl_ = new (&ctrlBuf_) CtrlImpl(dc);
+        bus_ = new (&busBuf_) BusImpl(spi, mgr_);
+
+        for (int i = 0; i < P; ++i)
+        {
+            mgr_->select(i);
+            mgr_->reset(i);
+            ctrl_->initSequence(*bus_);
+            mgr_->deselect();
+        }
+        return true;
+    }
+
+    alignas(BusImpl) std::aligned_storage_t<sizeof(BusImpl), alignof(BusImpl)> busBuf_;
+    alignas(
+        PanelMgrImpl) std::aligned_storage_t<sizeof(PanelMgrImpl), alignof(PanelMgrImpl)> mgrBuf_;
+    alignas(CtrlImpl) std::aligned_storage_t<sizeof(CtrlImpl), alignof(CtrlImpl)> ctrlBuf_;
+
+    BusImpl *bus_ = nullptr;
+    PanelMgrImpl *mgr_ = nullptr;
+    CtrlImpl *ctrl_ = nullptr;
 };
-
-template <int M, int N, int P, bool dma>
-inline bool LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>::init(
-    SPI_HandleTypeDef *spi, GPIO_TypeDef *cs_port, uint16_t cs_pin, GPIO_TypeDef *dc_port,
-    uint16_t dc_pin, GPIO_TypeDef *rst_port, uint16_t rst_pin)
-{
-    return assembly_(spi, cs_port, cs_pin, dc_port, dc_pin, rst_port, rst_pin);
-}
-
-template <int M, int N, int P, bool dma>
-inline LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>::LcdDriver(
-    SPI_HandleTypeDef *spi, GPIO_TypeDef *cs_port, uint16_t cs_pin, GPIO_TypeDef *dc_port,
-    uint16_t dc_pin, GPIO_TypeDef *rst_port, uint16_t rst_pin)
-{
-    assembly_(spi, cs_port, cs_pin, dc_port, dc_pin, rst_port, rst_pin);
-}
-
-template <int M, int N, int P, bool dma>
-inline void
-LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>::pushFrame(const uint8_t *px)
-{
-    (void)px;
-}
-
-template <int M, int N, int P, bool dma>
-inline void
-LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>::fillScreen(uint16_t color)
-{
-    (void)color;
-}
-
-template <int M, int N, int P, bool dma>
-inline uint32_t LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>::readID()
-{
-    return 0;
-}
-
-template <int M, int N, int P, bool dma>
-inline void
-LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>::setOrientation(uint8_t madctl)
-{
-    (void)madctl;
-}
-
-template <int M, int N, int P, bool dma>
-inline bool LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>::assembly_(
-    SPI_HandleTypeDef *spi, GPIO_TypeDef *cs_port, uint16_t cs_pin, GPIO_TypeDef *dc_port,
-    uint16_t dc_pin, GPIO_TypeDef *rst_port, uint16_t rst_pin)
-{
-    (void)spi;
-    (void)cs_port;
-    (void)cs_pin;
-    (void)dc_port;
-    (void)dc_pin;
-    (void)rst_port;
-    (void)rst_pin;
-    return true;
-}
-
-template <int M, int N, int P, bool dma>
-inline void LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>::beginTransaction_()
-{
-}
-
-template <int M, int N, int P, bool dma>
-inline void LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>::endTransaction_()
-{
-}

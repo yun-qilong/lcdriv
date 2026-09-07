@@ -25,6 +25,7 @@ lcdriv_add_ut(TestCompileTime SOURCES TestCompileTime.cpp)
 lcdriv_add_ut(TestBusSPI SOURCES Bus/TestBusSPI.cpp support/hal_stub.cpp)
 lcdriv_add_ut(TestControllerILI9341 SOURCES Controller/TestControllerILI9341.cpp support/hal_stub.cpp)
 lcdriv_add_ut(TestPanelMgr SOURCES PanelMgr/TestPanelMgr.cpp support/hal_stub.cpp)
+lcdriv_add_ut(TestLcdDriverSpiIli9341 SOURCES Mt/TestLcdDriverSpiIli9341.cpp support/hal_stub.cpp)
 
 add_executable(lcdriv_restricted RestrictedCompile.cpp)
 target_include_directories(lcdriv_restricted PRIVATE

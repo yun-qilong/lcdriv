@@ -15,7 +15,9 @@
     "readability-identifier-naming": 2
   },
   "include/lcdriv/lcdDriver.hpp": {
-    "readability-identifier-naming": 5
+    "cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays": 5,
+    "cppcoreguidelines-pro-type-member-init": 1,
+    "readability-identifier-naming": 1
   },
   "include/lcdriv/panelMgr.hpp": {
     "cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays": 4,

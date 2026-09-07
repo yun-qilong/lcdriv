@@ -91,7 +91,7 @@ endfunction()
 | `TestBusSPI` | gtest | **已落地** | Bus<SPI> send/read 行为与边界 |
 | `TestControllerILI9341` | gtest | **已落地** | Controller 协议方法行为与边界（不含初始化命令表） |
 | `TestPanelMgr` | gtest | **已落地** | PanelMgr select 互斥 / deselect / reset 脉冲与边界 |
-| `TestLcdDriverSpiIli9341` | gtest（MT） | 规划中 | 用例在 Driver 实现步设计并经 review 后补充 |
+| `TestLcdDriverSpiIli9341` | gtest（MT） | **已落地** | Driver 场（生命周期/CS 事务/门面转发）+ 上电序列全序 + 端到端协议真值（dma=false） |
 
 ## 7. TestCompileTime 断言清单
 
