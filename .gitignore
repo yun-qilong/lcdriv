@@ -5,6 +5,13 @@ cmake-build-*/
 *.obj
 *.exe
 
+# Coverage
+build-coverage/
+coverage/
+coverage.xml
+*.gcda
+*.gcno
+
 # IDE
 .vscode/
 .idea/

@@ -58,3 +58,32 @@ jobs:
         env:
           CLANG_TIDY_BIN: clang-tidy-14
         run: python3 scripts/run_tidy.py
+
+  coverage:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install gcovr
+        run: python3 -m pip install gcovr
+
+      - name: Build with coverage
+        run: |
+          cmake -B build-coverage -DCMAKE_BUILD_TYPE=Debug -DLCDRIV_BUILD_TESTS=ON -DLCDRIV_COVERAGE=ON
+          cmake --build build-coverage --target lcdriv_ut -j "$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build-coverage --output-on-failure -L lcdriv
+
+      - name: Generate coverage
+        run: |
+          gcovr -r . --object-directory build-coverage --exclude 'tests/' \
+                --xml -o coverage.xml --print-summary
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}

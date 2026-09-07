@@ -1,3 +1,5 @@
+option(LCDRIV_COVERAGE "Enable code coverage (gcovr)" OFF)
+
 function(lcdriv_add_ut TEST_NAME)
     cmake_parse_arguments(UT "" "" "SOURCES" ${ARGN})
 
@@ -7,6 +9,11 @@ function(lcdriv_add_ut TEST_NAME)
         ${PROJECT_SOURCE_DIR}/include
     )
     target_link_libraries(${TEST_NAME} PRIVATE GTest::gtest_main lcdriv)
+
+    if(LCDRIV_COVERAGE)
+        target_compile_options(${TEST_NAME} PRIVATE --coverage)
+        target_link_options(${TEST_NAME} PRIVATE --coverage)
+    endif()
 
     add_dependencies(lcdriv_ut ${TEST_NAME})
 
