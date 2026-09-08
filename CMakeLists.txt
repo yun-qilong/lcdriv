@@ -10,7 +10,7 @@ target_include_directories(lcdriv INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 target_compile_features(lcdriv INTERFACE cxx_std_17)
 
-option(LCDRIV_BUILD_TESTS "build unit tests" ON)
+option(LCDRIV_BUILD_TESTS "build unit tests" ${PROJECT_IS_TOP_LEVEL})
 if(LCDRIV_BUILD_TESTS)
     enable_testing()
     include(FetchContent)
