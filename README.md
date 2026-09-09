@@ -86,12 +86,6 @@ LcdDriver<BusType, ControllerType, M, N, P, dma>   组合根 + 门面
 
 详细设计见 [doc/](doc/README.md)（spec，实现与维护的唯一依据）：[代码架构](doc/code/architecture.md) → 各层算法 spec；关键取舍见 [ADR](doc/adr/0001-dma-completion-routing.md)。
 
-## 支持矩阵
-
-| | SPI | I2C |
-|---|---|---|
-| **ILI9341** | ✅ 当前（RGB565；竖屏 240×320 已实测，横屏 320×240 MADCTL 待实测锁定） | 待加 |
-| **ST7789** | 待加 | — |
 
 ## 集成（消费方如何引入）
 
