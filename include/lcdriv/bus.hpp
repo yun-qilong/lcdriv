@@ -8,6 +8,8 @@
 template <BusType bus, int P = 1, bool dma = false>
 class Bus;
 
+const uint16_t kMaxChunk = 65535;
+
 template <int P, bool dma>
 class Bus<BusType::SPI, P, dma>
 {
@@ -37,7 +39,7 @@ class Bus<BusType::SPI, P, dma>
         HAL_SPI_Receive(spi_, buf, n, HAL_MAX_DELAY);
     }
 
-    void sendBulk(const uint8_t *buf, uint32_t n)
+    void sendBulk(const uint8_t *buf, uint32_t n, uint16_t maxChunk = kMaxChunk)
     {
         if (n == 0)
         {
@@ -46,6 +48,7 @@ class Bus<BusType::SPI, P, dma>
 
         remaining_ = n;
         next_ = buf;
+        maxChunk_ = maxChunk;
         if constexpr (dma)
         {
             active_ = this;
@@ -69,10 +72,11 @@ class Bus<BusType::SPI, P, dma>
 
     const uint8_t *next_ = nullptr;
     uint32_t remaining_ = 0;
+    uint16_t maxChunk_ = 65535;
 
     const uint8_t *advance(uint16_t &chunk)
     {
-        chunk = static_cast<uint16_t>(std::min<uint32_t>(remaining_, 65535));
+        chunk = static_cast<uint16_t>(std::min<uint32_t>(remaining_, maxChunk_));
         const uint8_t *buf = next_;
         next_ = buf + chunk;
         remaining_ -= chunk;

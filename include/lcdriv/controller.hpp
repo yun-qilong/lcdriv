@@ -12,11 +12,14 @@ class Controller<ControllerType::ILI9341, M, N>
     static_assert(M > 0 && N > 0, "Controller: M and N must be positive");
 
   public:
-    static constexpr uint8_t kMadctlDefault = (M > N) ? 0x60 : 0x00;
+    // 0x28 = MV | BGR, required by this panel (0x60 does not work).
+    static constexpr uint8_t kMadctlDefault = (M > N) ? 0x28 : 0x00;
 
+    // NOLINTBEGIN(readability-identifier-naming)
     static constexpr uint8_t NOP = 0x00;
     static constexpr uint8_t SWRESET = 0x01;
     static constexpr uint8_t SLPOUT = 0x11;
+    static constexpr uint8_t INVOFF = 0x20;
     static constexpr uint8_t GAMSET = 0x26;
     static constexpr uint8_t DISPON = 0x29;
     static constexpr uint8_t CASET = 0x2A;
@@ -33,14 +36,23 @@ class Controller<ControllerType::ILI9341, M, N>
     static constexpr uint8_t VMCTR2 = 0xC7;
     static constexpr uint8_t RDID = 0xD3;
     static constexpr uint8_t ENABLE3G = 0xF2;
+    // NOLINTEND(readability-identifier-naming)
 
-    explicit Controller(GpioPin dc) : dc_(dc) {}
+    explicit Controller(GpioPin dc, GpioPin cs) : dc_(dc), cs_(cs) {}
 
     template <typename B>
     void writeCommand(B &bus, uint8_t cmd)
     {
         dcLow();
         bus.send(&cmd, 1);
+    }
+
+    template <typename B>
+    void writeCommandPulse(B &bus, uint8_t cmd)
+    {
+        csLow();
+        writeCommand(bus, cmd);
+        csHigh();
     }
 
     template <typename B>
@@ -57,16 +69,16 @@ class Controller<ControllerType::ILI9341, M, N>
     template <typename B>
     void pushFrame(B &bus, const uint8_t *px)
     {
-        setColRange(bus);
-        setPageRange(bus);
+        setColRange(bus, 0, M - 1);
+        setPageRange(bus, 0, N - 1);
         writePixels(bus, px, static_cast<uint32_t>(M) * static_cast<uint32_t>(N) * 2U);
     }
 
     template <typename B>
     void fillScreen(B &bus, uint16_t color)
     {
-        setColRange(bus);
-        setPageRange(bus);
+        setColRange(bus, 0, M - 1);
+        setPageRange(bus, 0, N - 1);
         writeSolidColor(bus, color);
     }
 
@@ -94,58 +106,65 @@ class Controller<ControllerType::ILI9341, M, N>
     template <typename B>
     void writeReg(B &bus, uint8_t cmd, const uint8_t *data, uint16_t n)
     {
+        csLow();
         writeCommand(bus, cmd);
         writeData(bus, data, n);
+        csHigh();
     }
 
     template <typename B>
-    void setColRange(B &bus)
+    void setColRange(B &bus, int colStart, int colEnd)
     {
-        const uint8_t col[4] = {0x00, 0x00, static_cast<uint8_t>((M - 1) >> 8),
-                                static_cast<uint8_t>(M - 1)};
+        const uint8_t col[4] = {static_cast<uint8_t>(colStart >> 8), static_cast<uint8_t>(colStart),
+                                static_cast<uint8_t>(colEnd >> 8), static_cast<uint8_t>(colEnd)};
         writeReg(bus, CASET, col, 4);
     }
 
     template <typename B>
-    void setPageRange(B &bus)
+    void setPageRange(B &bus, int pageStart, int pageEnd)
     {
-        const uint8_t page[4] = {0x00, 0x00, static_cast<uint8_t>((N - 1) >> 8),
-                                 static_cast<uint8_t>(N - 1)};
+        const uint8_t page[4] = {static_cast<uint8_t>(pageStart >> 8),
+                                 static_cast<uint8_t>(pageStart),
+                                 static_cast<uint8_t>(pageEnd >> 8), static_cast<uint8_t>(pageEnd)};
         writeReg(bus, PASET, page, 4);
     }
 
     template <typename B>
     void writePixels(B &bus, const uint8_t *data, uint32_t n)
     {
+        csLow();
         writeCommand(bus, RAMWR);
         dcHigh();
         bus.sendBulk(data, n);
+        csHigh();
     }
 
     template <typename B>
     void writeSolidColor(B &bus, uint16_t color)
     {
+        csLow();
         writeCommand(bus, RAMWR);
         dcHigh();
         const uint8_t hi = static_cast<uint8_t>(color >> 8);
         const uint8_t lo = static_cast<uint8_t>(color & 0xFF);
-        uint8_t row[2 * M];
         for (int i = 0; i < 2 * M; ++i)
         {
-            row[i] = (i % 2 == 0) ? hi : lo;
+            solidRow_[i] = (i % 2 == 0) ? hi : lo;
         }
         for (int y = 0; y < N; ++y)
         {
-            bus.send(row, static_cast<uint16_t>(2 * M));
+            bus.send(solidRow_, static_cast<uint16_t>(2 * M));
         }
+        csHigh();
     }
 
+    // INVOFF and a delay after DISPON are required.
     template <typename B>
-    void initSequence(B &bus)
+    void initSequence(B &bus) // NOLINT(readability-function-size)
     {
-        writeCommand(bus, SWRESET);
+        writeCommandPulse(bus, SWRESET);
         HAL_Delay(120);
-        writeCommand(bus, SLPOUT);
+        writeCommandPulse(bus, SLPOUT);
         HAL_Delay(120);
 
         const uint8_t v55 = 0x55;
@@ -170,8 +189,9 @@ class Controller<ControllerType::ILI9341, M, N>
         writeReg(bus, ENABLE3G, &vF2, 1);
         const uint8_t v26 = 0x01;
         writeReg(bus, GAMSET, &v26, 1);
-        writeCommand(bus, DISPON);
-        HAL_Delay(20);
+        writeCommandPulse(bus, INVOFF);
+        writeCommandPulse(bus, DISPON);
+        HAL_Delay(50);
     }
 
     void dcLow()
@@ -184,5 +204,17 @@ class Controller<ControllerType::ILI9341, M, N>
         HAL_GPIO_WritePin(dc_.port, dc_.pin, GPIO_PIN_SET);
     }
 
+    void csLow()
+    {
+        HAL_GPIO_WritePin(cs_.port, cs_.pin, GPIO_PIN_RESET);
+    }
+
+    void csHigh()
+    {
+        HAL_GPIO_WritePin(cs_.port, cs_.pin, GPIO_PIN_SET);
+    }
+
     GpioPin dc_;
+    GpioPin cs_;
+    uint8_t solidRow_[2 * M] = {};
 };

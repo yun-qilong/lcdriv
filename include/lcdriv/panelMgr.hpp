@@ -62,10 +62,8 @@ inline void PanelMgr<P>::reset(int panel)
 {
     GPIO_TypeDef *port = rst_[panel].port;
     uint16_t pin = rst_[panel].pin;
-    HAL_GPIO_WritePin(port, pin, GPIO_PIN_SET);
-    HAL_Delay(5);
     HAL_GPIO_WritePin(port, pin, GPIO_PIN_RESET);
-    HAL_Delay(10);
+    HAL_Delay(20);
     HAL_GPIO_WritePin(port, pin, GPIO_PIN_SET);
-    HAL_Delay(120);
+    HAL_Delay(150);
 }

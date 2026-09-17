@@ -22,8 +22,8 @@ static_assert(LcdDriver<BusType::SPI, ControllerType::ILI9341, 240, 100>::kBytes
 
 static_assert(Controller<ControllerType::ILI9341, 240, 320>::kMadctlDefault == 0x00,
               "portrait MADCTL");
-static_assert(Controller<ControllerType::ILI9341, 320, 240>::kMadctlDefault == 0x60,
-              "landscape MADCTL candidate");
+static_assert(Controller<ControllerType::ILI9341, 320, 240>::kMadctlDefault == 0x28,
+              "landscape MADCTL");
 
 using PortraitDriver = LcdDriver<BusType::SPI, ControllerType::ILI9341, 240, 320>;
 using LandscapeDriver = LcdDriver<BusType::SPI, ControllerType::ILI9341, 320, 240>;

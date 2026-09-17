@@ -2,6 +2,13 @@
 #include <cstdint>
 #include <vector>
 
+struct BulkCall
+{
+    const uint8_t *buf;
+    uint32_t n;
+    uint16_t maxChunk;
+};
+
 struct MockBus
 {
     void send(const uint8_t *buf, uint16_t n)
@@ -9,9 +16,9 @@ struct MockBus
         sends.emplace_back(buf, buf + n);
     }
 
-    void sendBulk(const uint8_t *buf, uint32_t n)
+    void sendBulk(const uint8_t *buf, uint32_t n, uint16_t maxChunk = 65535)
     {
-        bulkCalls.emplace_back(buf, buf + n);
+        bulkCalls.push_back({buf, n, maxChunk});
     }
 
     void read(uint8_t *buf, uint16_t n)
@@ -35,7 +42,7 @@ struct MockBus
     }
 
     std::vector<std::vector<uint8_t>> sends;
-    std::vector<std::vector<uint8_t>> bulkCalls;
+    std::vector<BulkCall> bulkCalls;
     std::size_t readCalls = 0;
     uint16_t lastReadN = 0;
     std::vector<uint8_t> preset;

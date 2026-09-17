@@ -83,16 +83,15 @@ TEST_F(TestPanelMgr, resetPulsesRstPinWithTimings)
 {
     mgr.reset(1);
 
-    // RST[1] = (p1, GPIO_PIN_9)：高 → 低 → 高
-    ASSERT_EQ(hal::g_transcript.gpio.size(), 3u);
+    // RST[1] = (p1, GPIO_PIN_9)：低 → 高（无先导高脉冲）
+    ASSERT_EQ(hal::g_transcript.gpio.size(), 2u);
     EXPECT_EQ(hal::g_transcript.gpio[0].port, &p1);
     EXPECT_EQ(hal::g_transcript.gpio[0].pin, GPIO_PIN_9);
-    EXPECT_EQ(hal::g_transcript.gpio[0].state, GPIO_PIN_SET);
-    EXPECT_EQ(hal::g_transcript.gpio[1].state, GPIO_PIN_RESET);
-    EXPECT_EQ(hal::g_transcript.gpio[2].state, GPIO_PIN_SET);
+    EXPECT_EQ(hal::g_transcript.gpio[0].state, GPIO_PIN_RESET);
+    EXPECT_EQ(hal::g_transcript.gpio[1].state, GPIO_PIN_SET);
 
-    // 延时：高 5ms → 低 10ms → 高 120ms
-    EXPECT_EQ(hal::g_transcript.delays, std::vector<uint32_t>({5u, 10u, 120u}));
+    // 延时：低 20ms → 高 150ms
+    EXPECT_EQ(hal::g_transcript.delays, std::vector<uint32_t>({20u, 150u}));
 
     // reset 不触碰事务忙状态
     EXPECT_FALSE(mgr.isBusy());
@@ -103,7 +102,7 @@ TEST_F(TestPanelMgr, resetIndependentOfBusyState)
     EXPECT_TRUE(mgr.select(0)); // 事务进行中
     mgr.reset(2);               // 复位另一块屏仍可执行（RST 与 CS 互斥无关）
 
-    ASSERT_EQ(hal::g_transcript.gpio.size(), 4u); // select cs0 + reset rst2 三笔
+    ASSERT_EQ(hal::g_transcript.gpio.size(), 3u); // select cs0 + reset rst2 两笔
     EXPECT_EQ(hal::g_transcript.gpio[0].port, &p0);
     EXPECT_EQ(hal::g_transcript.gpio[1].port, &p2);
     EXPECT_EQ(hal::g_transcript.gpio[1].pin, GPIO_PIN_10);

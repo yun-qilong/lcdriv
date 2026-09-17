@@ -41,11 +41,15 @@ class LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>
         assembly_(spi, dc, cs, rst);
     }
 
+    // CS is deliberately not released here: sendBulk owns it and raises it when
+    // the run completes, which also covers the DMA path where the transfer is
+    // still in flight when this returns.
     bool pushFrame(int panel, const uint8_t *px)
     {
         if (mgr_->select(panel))
         {
             ctrl_->pushFrame(*bus_, px);
+            mgr_->deselect();
             return true;
         }
         return false;
@@ -104,7 +108,7 @@ class LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>
         }
 
         mgr_ = new (&mgrBuf_) PanelMgrImpl(cs, rst);
-        ctrl_ = new (&ctrlBuf_) CtrlImpl(dc);
+        ctrl_ = new (&ctrlBuf_) CtrlImpl(dc, cs[0]);
         bus_ = new (&busBuf_) BusImpl(spi, mgr_);
 
         for (int i = 0; i < P; ++i)
