@@ -84,17 +84,32 @@ TEST_F(TestLcdDriverSpiIli9341, fillScreenWritesRowPattern)
     LcdDriver<BusType::SPI, ControllerType::ILI9341, 240, 320, 1> lcd(&h1, dc, cs, rst);
     hal::g_transcript.reset();
 
-    // KNOWN BUG: writeSolidColor calls sendBulk(solidRow_, 2*M*N) where solidRow_
-    // is only 2*M bytes. This reads 153600 bytes from a 480-byte buffer, causing
-    // a segfault in the test stub (and sending garbage on real hardware).
-    // The test is commented out until the production code is fixed.
-    //
-    // lcd.fillScreen(0, 0xF800);
+    lcd.fillScreen(0, 0xF800);
 
-    // Once fixed, the test should verify:
-    // - 5 sends: CASET cmd + data + PASET cmd + data + RAMWR cmd
-    // - 1 sendBulk for all rows
-    // - deselect (CS high)
+    // setColRange + setPageRange + writeSolidColor(RAMWR cmd)
+    // = CASET cmd + data + PASET cmd + data + RAMWR cmd = 5 sends
+    // Then 320 rows × bus.send(solidRow_, 480) = 320 sends
+    ASSERT_EQ(hal::g_transcript.tx.size(), 5u + 320u);
+    EXPECT_EQ(hal::g_transcript.tx[0].bytes, (std::vector<uint8_t>{0x2A})); // CASET
+    EXPECT_EQ(hal::g_transcript.tx[1].bytes, (std::vector<uint8_t>{0x00, 0x00, 0x00, 0xEF}));
+    EXPECT_EQ(hal::g_transcript.tx[2].bytes, (std::vector<uint8_t>{0x2B})); // PASET
+    EXPECT_EQ(hal::g_transcript.tx[3].bytes, (std::vector<uint8_t>{0x00, 0x00, 0x01, 0x3F}));
+    EXPECT_EQ(hal::g_transcript.tx[4].bytes, (std::vector<uint8_t>{0x2C})); // RAMWR
+
+    // Verify row pattern: 0xF800 = R=31, G=0, B=0 → bytes 0xF8, 0x00
+    std::vector<uint8_t> row(480);
+    for (std::size_t i = 0; i < row.size(); ++i)
+    {
+        row[i] = (i % 2 == 0) ? 0xF8 : 0x00;
+    }
+    for (std::size_t i = 0; i < 320; ++i)
+    {
+        EXPECT_EQ(hal::g_transcript.tx[5 + i].bytes, row);
+    }
+
+    // deselect (CS high)
+    ASSERT_FALSE(hal::g_transcript.gpio.empty());
+    EXPECT_EQ(hal::g_transcript.gpio.back().state, GPIO_PIN_SET);
 }
 
 TEST_F(TestLcdDriverSpiIli9341, readIDProtocol)
