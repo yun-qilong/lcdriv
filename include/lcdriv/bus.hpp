@@ -5,16 +5,19 @@
 #include "core.hpp"
 #include "panelMgr.hpp"
 
-template <BusType bus, int P = 1, bool dma = false>
+template <BusType bus, int NumPanels = 1, bool dma = false>
 class Bus;
 
 const uint16_t kMaxChunk = 65535;
 
-template <int P, bool dma>
-class Bus<BusType::SPI, P, dma>
+template <int NumPanels, bool dma>
+class Bus<BusType::SPI, NumPanels, dma>
 {
   public:
-    explicit Bus(SPI_HandleTypeDef *spi, PanelMgr<P> *cs) : spi_(spi), cs_(cs) {}
+    explicit Bus(SPI_HandleTypeDef *spi, PanelMgr<NumPanels> *panelMgr)
+        : spi_(spi), panelMgr_(panelMgr)
+    {
+    }
 
     Bus(const Bus &) = delete;
     Bus &operator=(const Bus &) = delete;
@@ -61,13 +64,13 @@ class Bus<BusType::SPI, P, dma>
             {
                 transmitNext();
             }
-            cs_->deselect();
+            panelMgr_->deselect();
         }
     }
 
   private:
     SPI_HandleTypeDef *spi_;
-    PanelMgr<P> *cs_;
+    PanelMgr<NumPanels> *panelMgr_;
     static inline Bus *active_ = nullptr;
 
     const uint8_t *next_ = nullptr;
@@ -106,7 +109,7 @@ class Bus<BusType::SPI, P, dma>
         else
         {
             active_ = nullptr;
-            cs_->deselect();
+            panelMgr_->deselect();
         }
     }
 

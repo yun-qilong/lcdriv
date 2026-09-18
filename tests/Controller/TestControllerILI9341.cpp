@@ -19,72 +19,26 @@ class TestControllerILI9341 : public ::testing::Test
 
     GPIO_TypeDef dcPort;
     GPIO_TypeDef csPort;
+    GPIO_TypeDef rstPort;
     GpioPin dc{&dcPort, GPIO_PIN_0};
-    GpioPin cs{&csPort, GPIO_PIN_4};
+    GpioPin cs[1] = {{&csPort, GPIO_PIN_4}};
+    GpioPin rst[1] = {{&rstPort, GPIO_PIN_1}};
+    PanelMgr<1> mgr{cs, rst};
     MockBus bus;
-    Controller<ControllerType::ILI9341, 240, 320> ctrl{dc, cs};
+    Controller<ControllerType::ILI9341, 240, 320, 1> ctrl{dc, &mgr};
 };
-
-TEST_F(TestControllerILI9341, writeCommandSendsOneByteWithDcLow)
-{
-    ctrl.writeCommand(bus, 0x2A);
-
-    ASSERT_EQ(bus.sends.size(), 1u);
-    EXPECT_EQ(bus.sends[0], std::vector<uint8_t>({0x2A}));
-    ASSERT_FALSE(hal::g_transcript.gpio.empty());
-    const auto &g = hal::g_transcript.gpio.back();
-    EXPECT_EQ(g.port, &dcPort);
-    EXPECT_EQ(g.pin, GPIO_PIN_0);
-    EXPECT_EQ(g.state, GPIO_PIN_RESET);
-}
-
-TEST_F(TestControllerILI9341, writeDataSendsBytesWithDcHigh)
-{
-    const uint8_t data[2] = {0x00, 0xEF};
-    ctrl.writeData(bus, data, 2);
-
-    ASSERT_EQ(bus.sends.size(), 1u);
-    EXPECT_EQ(bus.sends[0], std::vector<uint8_t>({0x00, 0xEF}));
-    ASSERT_FALSE(hal::g_transcript.gpio.empty());
-    const auto &g = hal::g_transcript.gpio.back();
-    EXPECT_EQ(g.port, &dcPort);
-    EXPECT_EQ(g.pin, GPIO_PIN_0);
-    EXPECT_EQ(g.state, GPIO_PIN_SET);
-}
-
-TEST_F(TestControllerILI9341, writeDataZeroLengthNoOp)
-{
-    const uint8_t data[1] = {0x01};
-    ctrl.writeData(bus, data, 0);
-
-    EXPECT_TRUE(bus.sends.empty());
-    EXPECT_TRUE(hal::g_transcript.gpio.empty());
-}
-
-TEST_F(TestControllerILI9341, writeDataMaxLengthSingle)
-{
-    std::vector<uint8_t> v(65535);
-    for (std::size_t i = 0; i < v.size(); ++i)
-    {
-        v[i] = static_cast<uint8_t>(i);
-    }
-    ctrl.writeData(bus, v.data(), 65535);
-
-    ASSERT_EQ(bus.sends.size(), 1u);
-    EXPECT_EQ(bus.sends[0], v);
-}
 
 TEST_F(TestControllerILI9341, pushFramePortraitWindowBulkPixels)
 {
-    // 240x320 portrait: single pushFrame call
     std::vector<uint8_t> px(153600);
     for (std::size_t i = 0; i < px.size(); ++i)
     {
         px[i] = static_cast<uint8_t>(i);
     }
-    ctrl.pushFrame(bus, px.data());
+    ctrl.pushFrame(bus, px.data(), 0);
 
-    // CASET cmd + data + PASET cmd + data + RAMWR cmd = 5 sends, 1 bulkCall
+    // setColRange (select+deselect) + setPageRange (select+deselect) +
+    // writePixels (select, RAMWR cmd, sendBulk) → 5 sends + 1 bulkCall
     ASSERT_EQ(bus.sends.size(), 5u);
     EXPECT_EQ(bus.sends[0], std::vector<uint8_t>({0x2A}));
     EXPECT_EQ(bus.sends[1], std::vector<uint8_t>({0x00, 0x00, 0x00, 0xEF}));
@@ -99,15 +53,14 @@ TEST_F(TestControllerILI9341, pushFramePortraitWindowBulkPixels)
 
 TEST_F(TestControllerILI9341, pushFrameLandscapeWindow)
 {
-    // 320x240 landscape: single pushFrame call
-    Controller<ControllerType::ILI9341, 320, 240> ctrlL{dc, cs};
+    PanelMgr<1> mgrL{cs, rst};
+    Controller<ControllerType::ILI9341, 320, 240, 1> ctrlL{dc, &mgrL};
     std::vector<uint8_t> px(153600);
-    ctrlL.pushFrame(bus, px.data());
+    ctrlL.pushFrame(bus, px.data(), 0);
 
     ASSERT_EQ(bus.sends.size(), 5u);
     ASSERT_EQ(bus.bulkCalls.size(), 1u);
 
-    // CASET range 0..319, PASET range 0..239
     EXPECT_EQ(bus.sends[1], std::vector<uint8_t>({0x00, 0x00, 0x01, 0x3F}));
     EXPECT_EQ(bus.sends[3], std::vector<uint8_t>({0x00, 0x00, 0x00, 0xEF}));
     EXPECT_EQ(bus.bulkCalls[0].n, 153600u);
@@ -115,24 +68,23 @@ TEST_F(TestControllerILI9341, pushFrameLandscapeWindow)
 
 TEST_F(TestControllerILI9341, pushFrameSmallSingleBulk)
 {
-    // 240x100: single pushFrame call
-    Controller<ControllerType::ILI9341, 240, 100> ctrlS{dc, cs};
+    PanelMgr<1> mgrS{cs, rst};
+    Controller<ControllerType::ILI9341, 240, 100, 1> ctrlS{dc, &mgrS};
     std::vector<uint8_t> px(48000);
-    ctrlS.pushFrame(bus, px.data());
+    ctrlS.pushFrame(bus, px.data(), 0);
 
     ASSERT_EQ(bus.sends.size(), 5u);
     ASSERT_EQ(bus.bulkCalls.size(), 1u);
 
-    // PASET pageEnd = 99 = 0x63
     EXPECT_EQ(bus.sends[3], std::vector<uint8_t>({0x00, 0x00, 0x00, 0x63}));
     EXPECT_EQ(bus.bulkCalls[0].n, 48000u);
 }
 
 TEST_F(TestControllerILI9341, fillScreenColorRowStream)
 {
-    // fillScreen: CASET + PASET + RAMWR cmd = 5 sends, then 320 per-row sends
-    ctrl.fillScreen(bus, 0xF800);
+    ctrl.fillScreen(bus, 0xF800, 0);
 
+    // setColRange + setPageRange + writeSolidColor(RAMWR + 320 rows + deselect)
     ASSERT_EQ(bus.sends.size(), 5u + 320u);
     EXPECT_EQ(bus.sends[0], std::vector<uint8_t>({0x2A}));
     EXPECT_EQ(bus.sends[1], std::vector<uint8_t>({0x00, 0x00, 0x00, 0xEF}));
@@ -140,7 +92,6 @@ TEST_F(TestControllerILI9341, fillScreenColorRowStream)
     EXPECT_EQ(bus.sends[3], std::vector<uint8_t>({0x00, 0x00, 0x01, 0x3F}));
     EXPECT_EQ(bus.sends[4], std::vector<uint8_t>({0x2C}));
 
-    // Verify row pattern: 0xF800 → [0xF8, 0x00] repeated 240 times = 480 bytes
     std::vector<uint8_t> row(480);
     for (std::size_t i = 0; i < row.size(); ++i)
     {
@@ -155,40 +106,44 @@ TEST_F(TestControllerILI9341, fillScreenColorRowStream)
 TEST_F(TestControllerILI9341, readIDDiscardDummyByte)
 {
     bus.preset = {0x00, 0x93, 0x41, 0x00};
-    const uint32_t id = ctrl.readID(bus);
+    const uint32_t id = ctrl.readID(bus, 0);
 
     EXPECT_EQ(id, 0x934100u);
     ASSERT_EQ(bus.sends.size(), 1u);
     EXPECT_EQ(bus.sends[0], std::vector<uint8_t>({0xD3}));
     EXPECT_EQ(bus.readCalls, 1u);
     EXPECT_EQ(bus.lastReadN, 4u);
-    ASSERT_EQ(hal::g_transcript.gpio.size(), 2u);
-    EXPECT_EQ(hal::g_transcript.gpio[0].state, GPIO_PIN_RESET);
-    EXPECT_EQ(hal::g_transcript.gpio[1].state, GPIO_PIN_SET);
+    // select(CS low) → dcLow → send → dcHigh → read → deselect(CS high)
+    ASSERT_EQ(hal::g_transcript.gpio.size(), 4u);
+    EXPECT_EQ(hal::g_transcript.gpio[0].state, GPIO_PIN_RESET); // cs select
+    EXPECT_EQ(hal::g_transcript.gpio[1].state, GPIO_PIN_RESET); // dcLow
+    EXPECT_EQ(hal::g_transcript.gpio[2].state, GPIO_PIN_SET);   // dcHigh
+    EXPECT_EQ(hal::g_transcript.gpio[3].state, GPIO_PIN_SET);   // deselect
 }
 
 TEST_F(TestControllerILI9341, readIDNonZeroDummyByte)
 {
     bus.preset = {0xFF, 0x93, 0x41, 0x00};
-    EXPECT_EQ(ctrl.readID(bus), 0x934100u);
+    EXPECT_EQ(ctrl.readID(bus, 0), 0x934100u);
 }
 
 TEST_F(TestControllerILI9341, readIDModuleIdPassthrough)
 {
     bus.preset = {0x00, 0x93, 0x41, 0x12};
-    EXPECT_EQ(ctrl.readID(bus), 0x934112u);
+    EXPECT_EQ(ctrl.readID(bus, 0), 0x934112u);
 }
 
 TEST_F(TestControllerILI9341, setOrientationWritesMadtcl)
 {
-    ctrl.setOrientation(bus, 0x60);
+    ctrl.setOrientation(bus, 0x60, 0);
 
     ASSERT_EQ(bus.sends.size(), 2u);
     EXPECT_EQ(bus.sends[0], std::vector<uint8_t>({0x36}));
     EXPECT_EQ(bus.sends[1], std::vector<uint8_t>({0x60}));
+    // select(CS low) → dcLow → send → dcHigh → send → deselect(CS high)
     ASSERT_EQ(hal::g_transcript.gpio.size(), 4u);
-    EXPECT_EQ(hal::g_transcript.gpio[0].state, GPIO_PIN_RESET); // csLow
+    EXPECT_EQ(hal::g_transcript.gpio[0].state, GPIO_PIN_RESET); // cs select
     EXPECT_EQ(hal::g_transcript.gpio[1].state, GPIO_PIN_RESET); // dcLow
     EXPECT_EQ(hal::g_transcript.gpio[2].state, GPIO_PIN_SET);   // dcHigh
-    EXPECT_EQ(hal::g_transcript.gpio[3].state, GPIO_PIN_SET);   // csHigh
+    EXPECT_EQ(hal::g_transcript.gpio[3].state, GPIO_PIN_SET);   // deselect
 }

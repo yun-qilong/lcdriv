@@ -9,15 +9,15 @@
 #include "controller.hpp"
 #include "panelMgr.hpp"
 
-template <BusType bus, ControllerType ctrl, int M, int N, int P, bool dma>
+template <BusType bus, ControllerType ctrl, int M, int N, int NumPanels, bool dma>
 class LcdDriver
 {
     static_assert(IsSupported<bus, ctrl>::value,
                   "LcdDriver: unsupported (bus, controller) combination");
 };
 
-template <int M, int N, int P, bool dma>
-class LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>
+template <int M, int N, int NumPanels, bool dma>
+class LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, NumPanels, dma>
 {
     static_assert(M > 0 && N > 0, "LcdDriver: M and N must be positive");
 
@@ -30,26 +30,27 @@ class LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>
     LcdDriver(LcdDriver &&) = delete;
     LcdDriver &operator=(LcdDriver &&) = delete;
 
-    bool init(SPI_HandleTypeDef *spi, GpioPin dc, const GpioPin (&cs)[P], const GpioPin (&rst)[P])
+    bool init(SPI_HandleTypeDef *spi, GpioPin dc, const GpioPin (&cs)[NumPanels],
+              const GpioPin (&rst)[NumPanels])
     {
         return assembly_(spi, dc, cs, rst);
     }
 
-    explicit LcdDriver(SPI_HandleTypeDef *spi, GpioPin dc, const GpioPin (&cs)[P],
-                       const GpioPin (&rst)[P])
+    explicit LcdDriver(SPI_HandleTypeDef *spi, GpioPin dc, const GpioPin (&cs)[NumPanels],
+                       const GpioPin (&rst)[NumPanels])
     {
         assembly_(spi, dc, cs, rst);
     }
 
-    // CS is deliberately not released here: sendBulk owns it and raises it when
-    // the run completes, which also covers the DMA path where the transfer is
-    // still in flight when this returns.
+    // CS 由 Controller 内部通过 PanelMgr 管理：
+    // - setColRange / setPageRange 各自独立 CS 帧（writeReg）
+    // - writePixels 的 CS 由 Bus::sendBulk 在传输完成时释放
     bool pushFrame(int panel, const uint8_t *px)
     {
-        if (mgr_->select(panel))
+        if (panelMgr_->occupyBus())
         {
-            ctrl_->pushFrame(*bus_, px);
-            mgr_->deselect();
+            ctrl_->pushFrame(*bus_, px, panel);
+            panelMgr_->releaseBus();
             return true;
         }
         return false;
@@ -57,24 +58,24 @@ class LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>
 
     void fillScreen(int panel, uint16_t color)
     {
-        mgr_->select(panel);
-        ctrl_->fillScreen(*bus_, color);
-        mgr_->deselect();
+        panelMgr_->occupyBus();
+        ctrl_->fillScreen(*bus_, color, panel);
+        panelMgr_->releaseBus();
     }
 
     uint32_t readID(int panel)
     {
-        mgr_->select(panel);
-        uint32_t id = ctrl_->readID(*bus_);
-        mgr_->deselect();
+        panelMgr_->occupyBus();
+        uint32_t id = ctrl_->readID(*bus_, panel);
+        panelMgr_->releaseBus();
         return id;
     }
 
     void setOrientation(int panel, uint8_t madctl)
     {
-        mgr_->select(panel);
-        ctrl_->setOrientation(*bus_, madctl);
-        mgr_->deselect();
+        panelMgr_->occupyBus();
+        ctrl_->setOrientation(*bus_, madctl, panel);
+        panelMgr_->releaseBus();
     }
 
     [[nodiscard]] int width() const
@@ -87,12 +88,12 @@ class LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>
     }
 
   private:
-    using BusImpl = Bus<BusType::SPI, P, dma>;
-    using CtrlImpl = Controller<ControllerType::ILI9341, M, N>;
-    using PanelMgrImpl = PanelMgr<P>;
+    using BusImpl = Bus<BusType::SPI, NumPanels, dma>;
+    using CtrlImpl = Controller<ControllerType::ILI9341, M, N, NumPanels>;
+    using PanelMgrImpl = PanelMgr<NumPanels>;
 
-    bool assembly_(SPI_HandleTypeDef *spi, GpioPin dc, const GpioPin (&cs)[P],
-                   const GpioPin (&rst)[P])
+    bool assembly_(SPI_HandleTypeDef *spi, GpioPin dc, const GpioPin (&cs)[NumPanels],
+                   const GpioPin (&rst)[NumPanels])
     {
         if (bus_)
         {
@@ -102,31 +103,31 @@ class LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, P, dma>
         {
             ctrl_->~CtrlImpl();
         }
-        if (mgr_)
+        if (panelMgr_)
         {
-            mgr_->~PanelMgrImpl();
+            panelMgr_->~PanelMgrImpl();
         }
 
-        mgr_ = new (&mgrBuf_) PanelMgrImpl(cs, rst);
-        ctrl_ = new (&ctrlBuf_) CtrlImpl(dc, cs[0]);
-        bus_ = new (&busBuf_) BusImpl(spi, mgr_);
+        panelMgr_ = new (&panelMgrBuf_) PanelMgrImpl(cs, rst);
+        ctrl_ = new (&ctrlBuf_) CtrlImpl(dc, panelMgr_);
+        bus_ = new (&busBuf_) BusImpl(spi, panelMgr_);
 
-        for (int i = 0; i < P; ++i)
+        (void)panelMgr_->occupyBus();
+        for (int i = 0; i < NumPanels; ++i)
         {
-            mgr_->select(i);
-            mgr_->reset(i);
-            ctrl_->initSequence(*bus_);
-            mgr_->deselect();
+            panelMgr_->reset(i);
+            ctrl_->initSequence(*bus_, i);
         }
+        panelMgr_->releaseBus();
         return true;
     }
 
     alignas(BusImpl) std::aligned_storage_t<sizeof(BusImpl), alignof(BusImpl)> busBuf_;
-    alignas(
-        PanelMgrImpl) std::aligned_storage_t<sizeof(PanelMgrImpl), alignof(PanelMgrImpl)> mgrBuf_;
+    alignas(PanelMgrImpl)
+        std::aligned_storage_t<sizeof(PanelMgrImpl), alignof(PanelMgrImpl)> panelMgrBuf_;
     alignas(CtrlImpl) std::aligned_storage_t<sizeof(CtrlImpl), alignof(CtrlImpl)> ctrlBuf_;
 
     BusImpl *bus_ = nullptr;
-    PanelMgrImpl *mgr_ = nullptr;
+    PanelMgrImpl *panelMgr_ = nullptr;
     CtrlImpl *ctrl_ = nullptr;
 };

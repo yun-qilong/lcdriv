@@ -30,9 +30,8 @@ TEST_F(TestPanelMgr, initiallyIdle)
 
 TEST_F(TestPanelMgr, selectLowersRequestedCs)
 {
-    EXPECT_TRUE(mgr.select(1));
+    mgr.select(1);
 
-    EXPECT_TRUE(mgr.isBusy());
     ASSERT_EQ(hal::g_transcript.gpio.size(), 1u);
     const auto &g = hal::g_transcript.gpio[0];
     EXPECT_EQ(g.port, &p1);
@@ -40,31 +39,43 @@ TEST_F(TestPanelMgr, selectLowersRequestedCs)
     EXPECT_EQ(g.state, GPIO_PIN_RESET);
 }
 
-TEST_F(TestPanelMgr, selectRejectedWhileBusy)
+TEST_F(TestPanelMgr, occupyBusRejectedWhileBusy)
 {
-    EXPECT_TRUE(mgr.select(0));
-    EXPECT_FALSE(mgr.select(2)); // 已有一块屏被选中 → 拒绝
+    EXPECT_TRUE(mgr.occupyBus());
+    EXPECT_FALSE(mgr.occupyBus()); // 已被占用 → 拒绝
 
     EXPECT_TRUE(mgr.isBusy());
-    ASSERT_EQ(hal::g_transcript.gpio.size(), 1u); // 只有第一次 select 写了 GPIO
 }
 
-TEST_F(TestPanelMgr, deselectRaisesAllCsAndFreesBus)
+TEST_F(TestPanelMgr, deselectRaisesAllCs)
 {
-    EXPECT_TRUE(mgr.select(0));
+    mgr.select(0);
     mgr.deselect();
 
-    EXPECT_FALSE(mgr.isBusy());
-    ASSERT_EQ(hal::g_transcript.gpio.size(), 4u);               // select + 3 条 CS 拉高
+    // select(0) + 3 条 CS 拉高
+    ASSERT_EQ(hal::g_transcript.gpio.size(), 4u);
     EXPECT_EQ(hal::g_transcript.gpio[0].state, GPIO_PIN_RESET); // cs0 选中
     EXPECT_EQ(hal::g_transcript.gpio[1].state, GPIO_PIN_SET);   // cs0 释放
-    EXPECT_EQ(hal::g_transcript.gpio[2].state, GPIO_PIN_SET);   // cs1（本就没低，幂等）
+    EXPECT_EQ(hal::g_transcript.gpio[2].state, GPIO_PIN_SET);   // cs1
     EXPECT_EQ(hal::g_transcript.gpio[3].state, GPIO_PIN_SET);   // cs2
     EXPECT_EQ(hal::g_transcript.gpio[1].port, &p0);
     EXPECT_EQ(hal::g_transcript.gpio[2].port, &p1);
     EXPECT_EQ(hal::g_transcript.gpio[3].port, &p2);
+}
 
-    EXPECT_TRUE(mgr.select(1)); // 释放后可再次选中
+TEST_F(TestPanelMgr, releaseBusClearsBusyAndDeselects)
+{
+    mgr.occupyBus();
+    EXPECT_TRUE(mgr.isBusy());
+
+    mgr.releaseBus();
+    EXPECT_FALSE(mgr.isBusy());
+    // releaseBus 调用 deselect → 3 条 CS 拉高
+    ASSERT_EQ(hal::g_transcript.gpio.size(), 3u);
+    for (const auto &g : hal::g_transcript.gpio)
+    {
+        EXPECT_EQ(g.state, GPIO_PIN_SET);
+    }
 }
 
 TEST_F(TestPanelMgr, deselectWhenIdleRaisesAllCs)
@@ -99,15 +110,14 @@ TEST_F(TestPanelMgr, resetPulsesRstPinWithTimings)
 
 TEST_F(TestPanelMgr, resetIndependentOfBusyState)
 {
-    EXPECT_TRUE(mgr.select(0)); // 事务进行中
-    mgr.reset(2);               // 复位另一块屏仍可执行（RST 与 CS 互斥无关）
+    EXPECT_TRUE(mgr.occupyBus()); // 事务进行中
+    mgr.reset(2);                 // 复位另一块屏仍可执行（RST 与 CS 互斥无关）
 
-    ASSERT_EQ(hal::g_transcript.gpio.size(), 3u); // select cs0 + reset rst2 两笔
-    EXPECT_EQ(hal::g_transcript.gpio[0].port, &p0);
-    EXPECT_EQ(hal::g_transcript.gpio[1].port, &p2);
-    EXPECT_EQ(hal::g_transcript.gpio[1].pin, GPIO_PIN_10);
+    ASSERT_EQ(hal::g_transcript.gpio.size(), 2u); // reset rst2 两笔
+    EXPECT_EQ(hal::g_transcript.gpio[0].port, &p2);
+    EXPECT_EQ(hal::g_transcript.gpio[0].pin, GPIO_PIN_10);
     EXPECT_TRUE(mgr.isBusy());
 
-    mgr.deselect();
+    mgr.releaseBus();
     EXPECT_FALSE(mgr.isBusy());
 }
