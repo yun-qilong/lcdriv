@@ -223,12 +223,12 @@ TEST_F(TestLcdDriverSpiIli9341Dma, pushFrameReturnsImmediatelyAndDmaStarts)
     ASSERT_EQ(hal::g_transcript.dmaStarts.size(), 1u);
     EXPECT_EQ(hal::g_transcript.dmaStarts[0].bytes.size(), 65535u);
 
-    // pushFrame deselects after ctrl_->pushFrame returns, so CS is high
-    ASSERT_FALSE(hal::g_transcript.gpio.empty());
-    EXPECT_EQ(hal::g_transcript.gpio.back().state, GPIO_PIN_SET);
+    // DMA mode: pushFrame does NOT release bus → second pushFrame rejected
+    std::vector<uint8_t> px2(153600, 0xCD);
+    EXPECT_FALSE(lcd.pushFrame(0, px2.data()));
 }
 
-TEST_F(TestLcdDriverSpiIli9341Dma, pushFrameSucceedsAfterPreviousDeselects)
+TEST_F(TestLcdDriverSpiIli9341Dma, pushFrameRejectedWhileDmaInFlight)
 {
     LcdDriver<BusType::SPI, ControllerType::ILI9341, 240, 320, 1, true> lcd(&h1, dc, cs, rst);
     hal::g_transcript.reset();
@@ -236,15 +236,25 @@ TEST_F(TestLcdDriverSpiIli9341Dma, pushFrameSucceedsAfterPreviousDeselects)
     std::vector<uint8_t> px(153600, 0xAB);
     EXPECT_TRUE(lcd.pushFrame(0, px.data()));
 
-    // pushFrame calls deselect immediately, so the next pushFrame succeeds
+    // DMA in flight → busy → second pushFrame rejected
     std::vector<uint8_t> px2(153600, 0xCD);
-    EXPECT_TRUE(lcd.pushFrame(0, px2.data()));
+    EXPECT_FALSE(lcd.pushFrame(0, px2.data()));
 
-    // 2 DMA starts total (1 per pushFrame)
-    EXPECT_EQ(hal::g_transcript.dmaStarts.size(), 2u);
+    // Still only 1 DMA start (first chunk of first frame)
+    EXPECT_EQ(hal::g_transcript.dmaStarts.size(), 1u);
+
+    // Complete first frame's DMA chain: 3 completions → 2 more chunks + releaseBus
+    hal::fireTxDmaComplete(&h1); // chain → chunk 2
+    hal::fireTxDmaComplete(&h1); // chain → chunk 3
+    hal::fireTxDmaComplete(&h1); // remaining==0 → releaseBus
+
+    // Bus released → third pushFrame succeeds → starts first chunk of second frame
+    std::vector<uint8_t> px3(153600, 0xEF);
+    EXPECT_TRUE(lcd.pushFrame(0, px3.data()));
+    EXPECT_EQ(hal::g_transcript.dmaStarts.size(), 4u); // 3 from first frame + 1 from second
 }
 
-TEST_F(TestLcdDriverSpiIli9341Dma, dmaChainCompletesAndDeselectsCs)
+TEST_F(TestLcdDriverSpiIli9341Dma, dmaChainCompletesAndReleasesBus)
 {
     LcdDriver<BusType::SPI, ControllerType::ILI9341, 240, 320, 1, true> lcd(&h1, dc, cs, rst);
     hal::g_transcript.reset();
@@ -255,16 +265,20 @@ TEST_F(TestLcdDriverSpiIli9341Dma, dmaChainCompletesAndDeselectsCs)
     // Single pushFrame → 1 DMA start (65535 bytes). Remaining = 91065.
     // Completion 1: chain → DMA start #2 (65535 bytes), remaining = 25530.
     // Completion 2: chain → DMA start #3 (25530 bytes), remaining = 0.
-    // Completion 3: remaining==0 → deselect.
+    // Completion 3: remaining==0 → releaseBus (CS high + busy cleared).
     hal::fireTxDmaComplete(&h1);
     hal::fireTxDmaComplete(&h1);
     hal::fireTxDmaComplete(&h1);
 
     EXPECT_EQ(hal::g_transcript.dmaStarts.size(), 3u);
     EXPECT_EQ(hal::g_transcript.dmaStarts[2].bytes.size(), 22530u);
-    // CS was raised by deselect
+    // CS raised by releaseBus
     ASSERT_FALSE(hal::g_transcript.gpio.empty());
     EXPECT_EQ(hal::g_transcript.gpio.back().state, GPIO_PIN_SET);
+
+    // Bus released → next pushFrame succeeds
+    std::vector<uint8_t> px2(153600, 0xCD);
+    EXPECT_TRUE(lcd.pushFrame(0, px2.data()));
 }
 
 TEST_F(TestLcdDriverSpiIli9341Dma, fillScreenIsBlockingEvenWithDma)

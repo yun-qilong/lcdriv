@@ -42,15 +42,15 @@ class LcdDriver<BusType::SPI, ControllerType::ILI9341, M, N, NumPanels, dma>
         assembly_(spi, dc, cs, rst);
     }
 
-    // CS 由 Controller 内部通过 PanelMgr 管理：
-    // - setColRange / setPageRange 各自独立 CS 帧（writeReg）
-    // - writePixels 的 CS 由 Bus::sendBulk 在传输完成时释放
     bool pushFrame(int panel, const uint8_t *px)
     {
         if (panelMgr_->occupyBus())
         {
             ctrl_->pushFrame(*bus_, px, panel);
-            panelMgr_->releaseBus();
+            if constexpr (not dma)
+            {
+                panelMgr_->releaseBus();
+            }
             return true;
         }
         return false;

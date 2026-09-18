@@ -109,7 +109,7 @@ class Bus<BusType::SPI, NumPanels, dma>
         else
         {
             active_ = nullptr;
-            panelMgr_->deselect();
+            panelMgr_->releaseBus();
         }
     }
 
